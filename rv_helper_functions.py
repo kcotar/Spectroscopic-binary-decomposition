@@ -6,6 +6,7 @@ from astropy.io import fits
 from lmfit.models import GaussianModel, VoigtModel, LinearModel, ConstantModel
 from scipy.signal import correlate
 from copy import deepcopy
+from common_helper_functions import _valid_orders_from_keys, correct_wvl_for_rv, _combine_orders
 
 # speed of light in km/s
 c_val = const.c.value / 1000.
@@ -61,8 +62,8 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
     # correlate the two spectra
     min_flux = 0.95
     # set near continuum spectral wiggles to the continuum level
-    ref_flux_sub_log[ref_flux_sub_log > min_flux] = 1.
-    obs_flux_res_log[obs_flux_res_log > min_flux] = 1.
+    # ref_flux_sub_log[ref_flux_sub_log > min_flux] = 1.
+    # obs_flux_res_log[obs_flux_res_log > min_flux] = 1.
     corr_res = correlate(1.-ref_flux_sub_log, 1.-obs_flux_res_log, mode='same', method='fft')
 
     # create a correlation subset that will actually be analysed
@@ -185,18 +186,17 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
     """
     # prepare list of per order RV determinations
     rv_shifts = list([])
-    echelle_orders = list(exposure_data.keys())
-    # remove keys whose type string
-    echelle_orders = [eo for eo in echelle_orders if not isinstance(eo, type(''))]
+    echelle_orders = _valid_orders_from_keys(exposure_data.keys())
+    
     # loop trough all available orders
     for echelle_order_key in echelle_orders:
         # determine observed data that will be used in the correlation procedure
         order_flx = exposure_data[echelle_order_key][use_flx_key]
         order_wvl = exposure_data[echelle_order_key]['wvl']
         # perform correlation with reference spectrum
-        rv_order_val, cent_wvl = correlate_order(order_flx, order_wvl,  # observed spectrum data
-                                                 rv_ref_flx, rv_ref_wvl,  # reference spectrum data
-                                                 plot=False, plot_path=plot_path)
+        rv_order_val, _ = correlate_order(order_flx, order_wvl,  # observed spectrum data
+                                          rv_ref_flx, rv_ref_wvl,  # reference spectrum data
+                                          plot=False, plot_path=plot_path)
         rv_shifts.append(rv_order_val)
 
     # nothing can be done if no per order RV values were determined for a given exposure/spectrum
@@ -213,20 +213,20 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
     rv_median = np.nanmedian(rv_shifts)
     rv_std = np.nanstd(rv_shifts)
 
-    #
     # print(rv_median, rv_std, n_fin_rv)
 
     if plot_rv and np.isfinite(rv_median):
         plt.scatter(echelle_orders, rv_shifts)
         plt.axhline(rv_median, label='Median RV', c='C3', ls='--')
-        plt.ylim(rv_median - 8.,
-                 rv_median + 8.)
+        plt.ylim(rv_median - 6.,
+                 rv_median + 6.)
         plt.xlim(np.nanmin(echelle_orders) - 25.,
                  np.nanmax(echelle_orders) + 25.)
         if rv_ref_val is not None:
             plt.axhline(ref_val, label='Ref RV', c='black', ls='--')
         plt.xlabel('Echelle order [A]')
         plt.ylabel('Radial velocity [km/s]')
+        plt.grid(ls='--', alpha=0.2, color='black')
         plt.tight_layout()
         plt.savefig(plot_path, dpi=250)
         plt.close()
@@ -235,5 +235,35 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
     return rv_median, rv_std
 
 
-def correct_wvl_for_rv(wvl, rv):
-    return wvl * (1. - rv / c_val)
+def get_RV_custom_corr_combined(exposure_data, rv_ref_flx, rv_ref_wvl,
+                                rv_ref_val=None, use_flx_key='flx',
+                                plot_rv=False, plot_path='rv_plot.png'):
+    """
+
+    :param exposure_data:
+    :param rv_ref_flx:
+    :param rv_ref_wvl:
+    :param rv_ref_val:
+    :param use_flx_key:
+    :param plot_rv:
+    :param plot_path:
+    :return:
+    """
+
+    # combne all used orders into one spectrum that will be used during CCF RV procedure
+    # orders will not be wavelenght corrected
+    flx_exposure_comb = _combine_orders(exposure_data, rv_ref_wvl,
+                                        use_flx_key=use_flx_key, use_rv_key=None)
+    idx_flx_exp_valid = np.isfinite(flx_exposure_comb)
+    # limit reference data to the observed span
+    idx_wvl_use = np.logical_and(rv_ref_wvl >= np.min(rv_ref_wvl[idx_flx_exp_valid]),
+                                 rv_ref_wvl <= np.max(rv_ref_wvl[idx_flx_exp_valid]))
+    # fill missing flx data with continuum values
+    flx_exposure_comb[~idx_flx_exp_valid] = 1.
+
+    # correlate data and get RV value
+    rv_combined, _ = correlate_spectra(flx_exposure_comb[idx_wvl_use], rv_ref_wvl[idx_wvl_use], 
+                                        rv_ref_flx[idx_wvl_use], rv_ref_wvl[idx_wvl_use])
+
+    # TODO: determine uncertainty of the determined radial velocity
+    return rv_combined, np.nan
