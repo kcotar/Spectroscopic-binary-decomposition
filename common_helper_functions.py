@@ -16,6 +16,30 @@ def _valid_orders_from_keys(key_list):
     return [eo for eo in key_list if not isinstance(eo, type(''))]
 
 
+def _order_exposures_by_key(exposures_data, exposure_list,
+                            sort_key=None):
+    """
+
+    :param exposures_data:
+    :param exposure_list:
+    :param sort_key:
+    :return:
+    """
+    exposure_list_use = list(exposure_list)
+    if sort_key is None or sort_key not in exposures_data[exposure_list_use[0]].keys():
+        print('  WARNING: Can not order by given key: '+str(sort_key), '- reordening not performed.')
+        return exposure_list
+
+    # gather key information
+    sort_list = []
+    for exposure in exposure_list_use:
+        sort_list.append(exposures_data[exposure][sort_key])
+
+    # sort exposures by keyword
+    idx_sort = np.argsort(sort_list)
+    return list(np.array(exposure_list_use)[idx_sort])
+
+
 def correct_wvl_for_rv(wvl, rv):
     """
 
@@ -24,9 +48,12 @@ def correct_wvl_for_rv(wvl, rv):
     :return:
     """
     # perform Doppler shift of wavelength values using the supplied RV value
-    # possitive RV -> shift tu bluer wavelengths
+    # positive RV -> shift tu bluer wavelengths
     # negative RV -> shift to redder wavelengths
-    return wvl * (1. - rv / c_val)
+    if rv == 0:
+        return wvl * 1.
+    else:
+        return wvl * (1. - rv / c_val)
 
 
 def _spectra_resample(spectra, wvl_orig, wvl_target):
@@ -52,19 +79,26 @@ def _spectra_resample(spectra, wvl_orig, wvl_target):
 
 def _combine_orders(exposure_data, target_wvl,
                     use_flx_key='flx', use_rv_key='RV_s1'):
-    
-    exposure_new_flx = np.full_like(target_wvl, fill_value=np.nan)
+    """
 
+    :param exposure_data:
+    :param target_wvl:
+    :param use_flx_key:
+    :param use_rv_key:
+    :return:
+    """
+    exposure_new_flx = np.full_like(target_wvl, fill_value=np.nan)
     if use_rv_key is None:
-        # use a rv of 0 km/s, effectivelly not moving a spectrum
+        # use a rv of 0 km/s, effectively not moving a spectrum
         rv_val = 0.
     else:
         if use_rv_key not in exposure_data.keys():
             # requested RV value was not determined for this exposure
             # TODO: repair return, might be dangerous in certain cases
             return exposure_new_flx
-        rv_val = exposure_data[use_rv_key]   
+        rv_val = exposure_data[use_rv_key]
 
+    # print('combine orders:', use_flx_key, use_rv_key, rv_val)
     echelle_orders = _valid_orders_from_keys(exposure_data.keys()) 
 
     for echelle_order_key in echelle_orders:

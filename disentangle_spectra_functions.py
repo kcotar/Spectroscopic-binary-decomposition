@@ -1,11 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from glob import glob
-from os import scandir, path
+from os import scandir, path  # scandir introduced in py3.x
 from scipy.interpolate import splrep, splev
-from scipy.signal import savgol_filter, argrelextrema
-from common_helper_functions import _valid_orders_from_keys, correct_wvl_for_rv, _combine_orders, _spectra_resample
+from scipy.signal import savgol_filter, medfilt
+from common_helper_functions import _order_exposures_by_key, _valid_orders_from_keys, correct_wvl_for_rv, _combine_orders, _spectra_resample
 
 norm_suffix = '_normalised.txt'
 sigma_norm_suffix = '_sigma_normalised.txt'
@@ -92,11 +91,26 @@ def get_spectral_data(star, wvl_orders, in_dir,
 
 
 def create_new_reference(exposures_all, target_wvl,
+                         percentile=None, w_filt=None,
                          use_flx_key='flx', use_rv_key='RV_s1',
                          plot_combined=False, plot_path='plot_combined.png',
                          plot_shifted=False):
+    """
+
+    :param exposures_all:
+    :param target_wvl:
+    :param percentile:
+    :param w_filt:
+    :param use_flx_key:
+    :param use_rv_key:
+    :param plot_combined:
+    :param plot_path:
+    :param plot_shifted:
+    :return:
+    """
     flx_new = list([])
-    for exposure_id in exposures_all.keys():
+    for exposure_id in _order_exposures_by_key(exposures_all, exposures_all.keys(),
+                                               sort_key=use_rv_key):
         exposure_data = exposures_all[exposure_id]    
         
         # combine all resampled and RV moved spectra
@@ -107,6 +121,7 @@ def create_new_reference(exposures_all, target_wvl,
     # compute median of all considered exposures
     flx_new = np.array(flx_new)
     flx_new_median = np.nanmedian(flx_new, axis=0)
+    flx_new_std = np.nanstd(flx_new, axis=0)
     idx_median = np.isfinite(flx_new_median)
     wvl_range = (np.min(target_wvl[idx_median]) - 2.,
                  np.max(target_wvl[idx_median]) + 2.)
@@ -125,27 +140,48 @@ def create_new_reference(exposures_all, target_wvl,
                xticks=x_ticks, xticklabels=x_ticks_str)
         ax.grid(ls='--', alpha=0.2, color='black')
         fig.tight_layout()
-        fig.savefig(plot_path, dpi=200)
+        fig.savefig(plot_path, dpi=150)
         plt.close(fig)
 
     # plot combined and shifted spectra - every spectrum shifted for a certain flux offset level
     if plot_shifted:
-        flx_offset = 0.15
-        fig, ax = plt.subplots(1, 1, figsize=(100, 3. + 1. * n_spectra))
+        # compute function to be plotted as deviations around median flux value
+        fill_1 = np.nanpercentile(flx_new, 15, axis=0)
+        fill_2 = np.nanpercentile(flx_new, 85, axis=0)
+        idx_fill = np.logical_and(np.isfinite(fill_1), np.isfinite(fill_2))
+        # start plotting
+        y_range = np.nanpercentile(flx_new_median, [0.4, 99.6])
+        flx_offset = 0.75 * (y_range[1] - y_range[0])  # half of expected y range
+        fig, ax = plt.subplots(1, 1, figsize=(90, 3. + 0.8 * n_spectra))
         for i_ex in range(n_spectra):
-            ax.plot(target_wvl, flx_new[i_ex, :] + (flx_offset * (i_ex + 1)), lw=0.5, alpha=0.8)
+            ax.plot(target_wvl, flx_new[i_ex, :] + (flx_offset * (i_ex + 1)), lw=0.6, alpha=0.8)
+        # ax.fill_between(target_wvl, fill_1, fill_2,
+        #                 color='lightgrey', where=idx_fill)
+        ax.fill_between(target_wvl, flx_new_median-flx_new_std, flx_new_median+flx_new_std,
+                        color='lightgrey', where=idx_fill)
         ax.plot(target_wvl, flx_new_median, c='black', lw=0.8)
         ax.set(xlim=wvl_range, 
-               ylim=np.nanpercentile(flx_new_median, [0.4, 99.6]) + np.array([0, flx_offset * n_spectra]),
+               ylim=y_range + np.array([0, flx_offset * n_spectra]),
                xlabel='Wavelength [A]', ylabel='Normalized and shifted flux',
                xticks=x_ticks, xticklabels=x_ticks_str)
         ax.grid(ls='--', alpha=0.2, color='black')
         fig.tight_layout()
-        fig.savefig(plot_path[:-4] + '_shifted.png', dpi=200)
+        fig.savefig(plot_path[:-4] + '_shifted.png', dpi=150)
         plt.close(fig)
 
     # return rv corrected and computed median combination of individual exposures
-    return flx_new_median
+    if percentile is None:
+         flx_final = flx_new_median  # / np.nanpercentile(flx_new_median, 80)
+    else:
+        flx_new_perc = np.nanpercentile(flx_new, percentile, axis=0)
+        flx_final = flx_new_perc  # / np.nanpercentile(flx_new_median, 80)
+
+    # apply median filtering if requested
+    if w_filt is not None:
+        flx_final = medfilt(flx_final, w_filt)
+
+    # return new median combined spectrum
+    return flx_final, flx_new_std
 
 
 def _evaluate_norm_fit(orig, fit, idx, sigma_low, sigma_high):
@@ -171,6 +207,24 @@ def _spectra_normalize(wvl, spectra_orig,
                        steps=5, sigma_low=2., sigma_high=2.5, window=15, order=5, n_min_perc=5.,
                        func='cheb', fit_on_idx=None, fit_mask=None, sg_filter=False,
                        return_fit=False, return_idx=False):
+    """
+
+    :param wvl:
+    :param spectra_orig:
+    :param steps:
+    :param sigma_low:
+    :param sigma_high:
+    :param window:
+    :param order:
+    :param n_min_perc:
+    :param func:
+    :param fit_on_idx:
+    :param fit_mask:
+    :param sg_filter:
+    :param return_fit:
+    :param return_idx:
+    :return:
+    """
     # perform sigma clipping before the next fitting cycle
     idx_fit = np.logical_and(np.isfinite(wvl), np.isfinite(spectra_orig))
     spectra = np.array(spectra_orig)
@@ -230,14 +284,25 @@ def renorm_exposure_perorder(exposure_data, ref_flx, ref_wvl,
                              input_flx_key='flx',
                              output_flx_key='flx_renorm',
                              plot=False, plot_path=None):
-    
+    """
+
+    :param exposure_data:
+    :param ref_flx:
+    :param ref_wvl:
+    :param use_rv_key:
+    :param input_flx_key:
+    :param output_flx_key:
+    :param plot:
+    :param plot_path:
+    :return:
+    """
     rv_val_star = exposure_data[use_rv_key]
-    # shift reference spectrum from stars' to baricentric/observed reference frame - use reversed RV value
-    ref_wvl_shifted =  correct_wvl_for_rv(ref_wvl, -1.*rv_val_star)
+    # shift reference spectrum from stars' rest to barycentric/observed reference frame - use reversed RV value
+    ref_wvl_shifted = correct_wvl_for_rv(ref_wvl, -1.*rv_val_star)
 
     echelle_orders = _valid_orders_from_keys(exposure_data.keys())
     
-    # loop trough all available echelle orders
+    # loop trough all available Echelle orders
     for echelle_order_key in echelle_orders:
         # determine observed data that will be used in the correlation procedure
         order_flx = exposure_data[echelle_order_key][input_flx_key]
@@ -258,4 +323,80 @@ def renorm_exposure_perorder(exposure_data, ref_flx, ref_wvl,
             exposure_data[echelle_order_key][output_flx_key] = order_flx
 
     # return original data with addition of a renormed spectrum
+    return exposure_data
+
+
+def remove_ref_from_exposure(exposure_data, ref_flx, ref_wvl,
+                             use_rv_key='RV_s1',
+                             input_flx_key='flx',
+                             output_flx_key='flx_secon',
+                             ref_orig=None, w_filt=None,
+                             plot=False, plot_path='plot.png'):
+    """
+
+    :param exposure_data:
+    :param ref_flx:
+    :param ref_wvl:
+    :param use_rv_key:
+    :param input_flx_key:
+    :param output_flx_key:
+    :param ref_orig:
+    :param plot:
+    :param plot_path:
+    :return:
+    """
+    rv_val_star = exposure_data[use_rv_key]
+    # shift reference spectrum from stars' rest to barycentric/observed reference frame - use reversed RV value
+    ref_wvl_shifted = correct_wvl_for_rv(ref_wvl, -1. * rv_val_star)
+
+    echelle_orders = _valid_orders_from_keys(exposure_data.keys())
+
+    # loop trough all available Echelle orders
+    for echelle_order_key in echelle_orders:
+        # determine observed data that will be used in the primary removal procedure
+        order_flx = exposure_data[echelle_order_key][input_flx_key]
+        order_wvl = exposure_data[echelle_order_key]['wvl']
+
+        # resample reference spectrum to the observed wavelength pixels
+        ref_flx_order = _spectra_resample(ref_flx, ref_wvl_shifted, order_wvl)
+
+        # remove contribution of a reference spectrum by a simple spectral substraction
+        if w_filt is not None:
+            exposure_data[echelle_order_key][output_flx_key] = medfilt(order_flx - ref_flx_order, w_filt)
+        else:
+            exposure_data[echelle_order_key][output_flx_key] = order_flx - ref_flx_order
+
+        # exposure_data[echelle_order_key][output_flx_key] = order_flx / ref_flx_order
+
+    if plot:
+        flx_orig_comb = _combine_orders(exposure_data, ref_wvl_shifted,
+                                        use_flx_key=input_flx_key, use_rv_key=None)
+        flx_seco_comb = _combine_orders(exposure_data, ref_wvl_shifted,
+                                        use_flx_key=output_flx_key, use_rv_key=None)
+
+        y_range = np.nanpercentile(ref_flx, [0.4, 99.6])
+        flx_offset = 0.75 * (y_range[1] - y_range[0])
+        wvl_range = (np.min(ref_wvl_shifted[np.isfinite(flx_orig_comb)]) - 2.,
+                     np.max(ref_wvl_shifted[np.isfinite(flx_orig_comb)]) + 2.)
+        x_ticks = range(4500, 7000, 20)
+        x_ticks_str = [str(xt) for xt in x_ticks]
+
+        fig, ax = plt.subplots(1, 1, figsize=(100, 5.))
+        ax.plot(ref_wvl_shifted, flx_orig_comb + (flx_offset * 1), lw=0.7, alpha=0.9)
+        ax.plot(ref_wvl_shifted, flx_seco_comb + 1. + (flx_offset * 2), lw=0.7, alpha=0.9)
+        # ax.plot(ref_wvl_shifted, medfilt(flx_seco_comb + 1. + (flx_offset * 2), 19), lw=0.7, alpha=0.9, c='black')
+        ax.plot(ref_wvl_shifted, ref_flx, c='black', lw=0.8)
+        if ref_orig is not None:
+            ax.plot(ref_wvl_shifted, ref_orig - flx_offset, c='red', lw=0.8)
+            y_range[0] -= flx_offset
+        ax.set(xlim=wvl_range,
+               ylim=y_range + np.array([0, flx_offset * 2]),
+               xlabel='Wavelength [A]', ylabel='Normalized and median removed flux',
+               xticks=x_ticks, xticklabels=x_ticks_str)
+        ax.grid(ls='--', alpha=0.2, color='black')
+        fig.tight_layout()
+        fig.savefig(plot_path, dpi=150)
+        plt.close(fig)
+
+    # return original data with addition of a reference corrected per order spectrum
     return exposure_data

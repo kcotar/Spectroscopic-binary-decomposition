@@ -6,7 +6,7 @@ from astropy.io import fits
 from lmfit.models import GaussianModel, VoigtModel, LinearModel, ConstantModel
 from scipy.signal import correlate
 from copy import deepcopy
-from common_helper_functions import _valid_orders_from_keys, correct_wvl_for_rv, _combine_orders
+from common_helper_functions import _valid_orders_from_keys, _combine_orders
 
 # speed of light in km/s
 c_val = const.c.value / 1000.
@@ -43,7 +43,7 @@ def spectra_logspace(flx, wvl):
 
 
 def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
-                      plot=None):
+                      plot=None, cont_value=1.):
     """
 
     :param obs_flx:
@@ -64,7 +64,8 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
     # set near continuum spectral wiggles to the continuum level
     # ref_flux_sub_log[ref_flux_sub_log > min_flux] = 1.
     # obs_flux_res_log[obs_flux_res_log > min_flux] = 1.
-    corr_res = correlate(1.-ref_flux_sub_log, 1.-obs_flux_res_log, mode='same', method='fft')
+    corr_res = correlate(cont_value - ref_flux_sub_log, cont_value - obs_flux_res_log,
+                         mode='same', method='fft')
 
     # create a correlation subset that will actually be analysed
     corr_w_size_wide = 130  # preform rough search of the local peak
@@ -128,7 +129,7 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
 
 def correlate_order(obs_flx, obs_wvl,
                     ref_flx, ref_wvl,
-                    order_crop_frac=0.,
+                    order_crop_frac=0., cont_value=1.,
                     plot=False, plot_path='rv_corr_plot.png'):
     """
 
@@ -162,16 +163,18 @@ def correlate_order(obs_flx, obs_wvl,
     # perform correlation between the datasets
     try:
         if plot:
-            return correlate_spectra(obs_flx_use, ref_wvl_use, ref_flx_use, ref_wvl_use, plot=order_txt_file[:-4])
+            return correlate_spectra(obs_flx_use, ref_wvl_use, ref_flx_use, ref_wvl_use,
+                                     cont_value=cont_value, plot=order_txt_file[:-4])
         else:
-            return correlate_spectra(obs_flx_use, ref_wvl_use, ref_flx_use, ref_wvl_use)
+            return correlate_spectra(obs_flx_use, ref_wvl_use, ref_flx_use, ref_wvl_use,
+                                     cont_value=cont_value)
     except:
         print('    Correlation problem')
         return np.nan, np.nanmedian(ref_wvl[idx_ref_use])
 
 
 def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
-                                rv_ref_val=None, use_flx_key='flx',
+                                rv_ref_val=None, use_flx_key='flx', cont_value=1.,
                                 plot_rv=False, plot_path='rv_plot.png'):
     """
 
@@ -196,6 +199,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
         # perform correlation with reference spectrum
         rv_order_val, _ = correlate_order(order_flx, order_wvl,  # observed spectrum data
                                           rv_ref_flx, rv_ref_wvl,  # reference spectrum data
+                                          cont_value=cont_value,
                                           plot=False, plot_path=plot_path)
         rv_shifts.append(rv_order_val)
 
@@ -236,7 +240,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
 
 
 def get_RV_custom_corr_combined(exposure_data, rv_ref_flx, rv_ref_wvl,
-                                rv_ref_val=None, use_flx_key='flx',
+                                rv_ref_val=None, use_flx_key='flx', cont_value=1.,
                                 plot_rv=False, plot_path='rv_plot.png'):
     """
 
@@ -259,11 +263,59 @@ def get_RV_custom_corr_combined(exposure_data, rv_ref_flx, rv_ref_wvl,
     idx_wvl_use = np.logical_and(rv_ref_wvl >= np.min(rv_ref_wvl[idx_flx_exp_valid]),
                                  rv_ref_wvl <= np.max(rv_ref_wvl[idx_flx_exp_valid]))
     # fill missing flx data with continuum values
-    flx_exposure_comb[~idx_flx_exp_valid] = 1.
+    flx_exposure_comb[~idx_flx_exp_valid] = cont_value
 
     # correlate data and get RV value
-    rv_combined, _ = correlate_spectra(flx_exposure_comb[idx_wvl_use], rv_ref_wvl[idx_wvl_use], 
-                                        rv_ref_flx[idx_wvl_use], rv_ref_wvl[idx_wvl_use])
+    try:
+        rv_combined, _ = correlate_spectra(flx_exposure_comb[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
+                                           rv_ref_flx[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
+                                           cont_value=cont_value)
+    except:
+        print('   Combined correlation problem')
+        return np.nan, np.nan
 
     # TODO: determine uncertainty of the determined radial velocity
     return rv_combined, np.nan
+
+
+def add_rv_to_metadata(star_data, star_id,
+                       obs_metadata, rv_col,
+                       plot=False, plot_path='plot.png'):
+    """
+
+    :param star_data:
+    :param star_id:
+    :param obs_metadata:
+    :param rv_col:
+    :param plot:
+    :param plot_path:
+    :return:
+    """
+    for exp_id in star_data.keys():
+        # extract raw filename from exposure id
+        filename = exp_id.split('.')[0]
+        # check if we have a RV value for a selected star
+        if rv_col in star_data[exp_id].keys():
+            idx_meta_row = np.where(obs_metadata['filename'] == filename)[0]
+            # is the same filename present in the metadata
+            if len(idx_meta_row) == 1:
+                # copy velocity and its error to the metadata
+                obs_metadata[rv_col][idx_meta_row] = star_data[exp_id][rv_col]
+                obs_metadata['e_' + rv_col][idx_meta_row] = star_data[exp_id]['e_' + rv_col]
+
+    if plot:
+        # find rows that are relevant for the selected star
+        idx_cols_plot = obs_metadata['star'] == star_id.replace('_', ' ').lower()
+        # export plot if it was requested
+        fig, ax = plt.subplots(1, 1)
+        ax.errorbar(obs_metadata['phase'][idx_cols_plot], obs_metadata['RV_s1'][idx_cols_plot],
+                    yerr=obs_metadata['e_RV_s1'][idx_cols_plot],
+                    c='black', fmt='o', ms=1, elinewidth=0.2, lw=0)
+        ax.set(xlim=(-0.05, 1.05), xlabel='Orbital phase', ylabel='Radial velocity [km/s]')
+        ax.grid(ls='--', alpha=0.2, color='black')
+        fig.tight_layout()
+        fig.savefig(plot_path, dpi=300)
+        plt.close(fig)
+
+    # return updated table with metadata about individual exposures
+    return obs_metadata
