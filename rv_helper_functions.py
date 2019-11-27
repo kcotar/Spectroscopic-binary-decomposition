@@ -51,6 +51,7 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
     :param ref_flx:
     :param ref_wvl:
     :param plot:
+    :param cont_value:
     :return:
     """
 
@@ -138,6 +139,7 @@ def correlate_order(obs_flx, obs_wvl,
     :param ref_flx:
     :param ref_wvl:
     :param order_crop_frac:
+    :param cont_value:
     :param plot:
     :param plot_path:
     :return:
@@ -227,7 +229,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
         plt.xlim(np.nanmin(echelle_orders) - 25.,
                  np.nanmax(echelle_orders) + 25.)
         if rv_ref_val is not None:
-            plt.axhline(ref_val, label='Ref RV', c='black', ls='--')
+            plt.axhline(rv_ref_val, label='Ref RV', c='black', ls='--')
         plt.xlabel('Echelle order [A]')
         plt.ylabel('Radial velocity [km/s]')
         plt.grid(ls='--', alpha=0.2, color='black')
@@ -308,8 +310,8 @@ def add_rv_to_metadata(star_data, star_id,
         idx_cols_plot = obs_metadata['star'] == star_id.replace('_', ' ').lower()
         # export plot if it was requested
         fig, ax = plt.subplots(1, 1)
-        ax.errorbar(obs_metadata['phase'][idx_cols_plot], obs_metadata['RV_s1'][idx_cols_plot],
-                    yerr=obs_metadata['e_RV_s1'][idx_cols_plot],
+        ax.errorbar(obs_metadata['phase'][idx_cols_plot], obs_metadata[rv_col][idx_cols_plot],
+                    yerr=obs_metadata['e_' + rv_col][idx_cols_plot],
                     c='black', fmt='o', ms=1, elinewidth=0.2, lw=0)
         ax.set(xlim=(-0.05, 1.05), xlabel='Orbital phase', ylabel='Radial velocity [km/s]')
         ax.grid(ls='--', alpha=0.2, color='black')

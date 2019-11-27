@@ -2,9 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from os import scandir, path  # scandir introduced in py3.x
+from copy import deepcopy
 from scipy.interpolate import splrep, splev
 from scipy.signal import savgol_filter, medfilt
 from common_helper_functions import _order_exposures_by_key, _valid_orders_from_keys, correct_wvl_for_rv, _combine_orders, _spectra_resample
+from rv_helper_functions import get_RV_ref_spectrum, get_RV_custom_corr_perorder, get_RV_custom_corr_combined, add_rv_to_metadata
+
 
 norm_suffix = '_normalised.txt'
 sigma_norm_suffix = '_sigma_normalised.txt'
@@ -361,12 +364,12 @@ def remove_ref_from_exposure(exposure_data, ref_flx, ref_wvl,
         ref_flx_order = _spectra_resample(ref_flx, ref_wvl_shifted, order_wvl)
 
         # remove contribution of a reference spectrum by a simple spectral substraction
+        order_flx_diff = order_flx - ref_flx_order
+        # order_flx_diff = order_flx / ref_flx_order
         if w_filt is not None:
-            exposure_data[echelle_order_key][output_flx_key] = medfilt(order_flx - ref_flx_order, w_filt)
+            exposure_data[echelle_order_key][output_flx_key] = medfilt(order_flx_diff, w_filt)
         else:
-            exposure_data[echelle_order_key][output_flx_key] = order_flx - ref_flx_order
-
-        # exposure_data[echelle_order_key][output_flx_key] = order_flx / ref_flx_order
+            exposure_data[echelle_order_key][output_flx_key] = order_flx_diff
 
     if plot:
         flx_orig_comb = _combine_orders(exposure_data, ref_wvl_shifted,
@@ -400,3 +403,124 @@ def remove_ref_from_exposure(exposure_data, ref_flx, ref_wvl,
 
     # return original data with addition of a reference corrected per order spectrum
     return exposure_data
+
+
+# --------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+# ------------ Function that runs the whole procedure at once --------------------
+# --------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+def _are_orders_renormed(exposures_data, input_key):
+    """
+
+    :param exposures_data:
+    :return:
+    """
+    exposures_all = list(exposures_data.keys())
+    n_renorm = 0
+    for exp_id in exposures_all:
+        orders_all = _valid_orders_from_keys(exposures_data[exp_id].keys())
+        n_orders = 0
+        for ord_id in orders_all:            
+            if input_key+'_renorm' in list(exposures_data[exp_id][ord_id].keys()):
+                n_orders += 1
+        if n_orders == len(orders_all):
+            n_renorm += 1
+    # return True if all orders in all exposures have renormed flux data
+    return n_renorm == len(exposures_all)
+
+
+def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  # datasets and tables
+                                                     ref_flx, ref_wvl,  # spectral reference data
+                                                     star_id='', in_flx_key = 'flx', rv_key='RV_s1', # exact data that will be used
+                                                     primary=True,  # are we processing the most obvoius spectral component
+                                                     renorm_orders=True, combined_rv_spectrum=False,  # processing settings
+                                                     save_plots=True, plot_prefix='', plot_suffix='',  # plotting settings
+                                                     verbose=True,   # screen verbocity setting
+                                                     ):
+
+    # some component specific processing and output settings
+    if primary:
+        c_id = 1
+        cont_value=1.
+    else:
+        c_id = 2
+        cont_value=0.
+
+    # set flux dataset that will be used in the processing
+    use_flx_key = deepcopy(in_flx_key)
+    if renorm_orders and _are_orders_renormed(star_data, use_flx_key):
+        # use renormalized orders (per order and not global normalization)
+        use_flx_key += '_renorm'
+
+    if verbose:
+        print('  Spectra used for RV determination:', use_flx_key)
+
+    # get per order RV velocities for every exposure
+    for exp_id in star_data.keys():
+        if verbose:
+            print('  Exposure:', exp_id)
+
+        if combined_rv_spectrum:
+            # compute RV from a combined spectrum (stack of individual echelle orders)
+            rv_png = plot_prefix + '_' + exp_id + '_rv' + str(c_id) + '-combined' + plot_suffix + '.png'
+            rv_med, rv_std = get_RV_custom_corr_combined(deepcopy(star_data[exp_id]), ref_flx, ref_wvl,
+                                                         cont_value=cont_value,
+                                                         rv_ref_val=None, use_flx_key=use_flx_key,
+                                                         plot_rv=save_plots, plot_path=rv_png)
+            if verbose:
+                print('   Combined RV value:', rv_med, rv_std)
+        else:
+            # compute mean RV from all considered orders
+            rv_png = plot_prefix + '_' + exp_id + '_rv' + str(c_id) + '-orders' + plot_suffix + '.png'
+            rv_med, rv_std = get_RV_custom_corr_perorder(deepcopy(star_data[exp_id]), ref_flx, ref_wvl,
+                                                         cont_value=cont_value,
+                                                         rv_ref_val=None, use_flx_key=use_flx_key,
+                                                         plot_rv=save_plots, plot_path=rv_png)
+            if verbose:
+                print('   Median RV value:', rv_med, rv_std)
+
+        # store values to the dictionary
+        star_data[exp_id][rv_key] = rv_med
+        star_data[exp_id]['e_' + rv_key] = rv_std
+
+    # renormalize original Echell spectrum orders at every iteration if nedded
+    if renorm_orders:
+        for exp_id in star_data.keys():
+            if verbose:
+                print('  Renormalizing exposure:', exp_id)
+
+            # compute mean RV from all considered orders
+            star_exposure_new = renorm_exposure_perorder(deepcopy(star_data[exp_id]), ref_flx, ref_wvl,
+                                                         use_rv_key=rv_key,
+                                                         input_flx_key=in_flx_key,
+                                                         output_flx_key=in_flx_key+'_renorm',
+                                                         plot=save_plots, plot_path=None)
+            star_data[exp_id] = star_exposure_new
+
+    # compute median spectrum of a secondary star and use it as a new and updated RV template
+    use_flx_key_median = deepcopy(in_flx_key)
+    if renorm_orders:
+        # use renormalized orders (per order and not global normalization)
+        use_flx_key_median += '_renorm'
+
+    if verbose:
+        print(' Creating median reference spectrum')
+    combined_png = plot_prefix + '_s' + str(c_id) + '_combined' + plot_suffix + '.png'
+    # get new reference spectrum as median of all alligned spectra, per wvl pixel std is also computed and returned 
+    ref_flx_new, _ = create_new_reference(star_data, ref_wvl,
+                                          # percentile=85.,
+                                          w_filt=15,
+                                          use_flx_key=use_flx_key_median, use_rv_key=rv_key,
+                                          plot_combined=save_plots, plot_shifted=True,
+                                          plot_path=combined_png)
+
+    # Add RV values of a binary star to the observations metadata table and plot phase RV diagram
+    rv_phase_plot_png = plot_prefix + '_RV' + str(c_id) + plot_suffix + '.png'
+    obs_metadata = add_rv_to_metadata(star_data, star_id,
+                                      deepcopy(obs_metadata), rv_key,
+                                      # always save this plot as it is the final result of the binary spectral processing
+                                      plot=True, plot_path=rv_phase_plot_png)
+
+    # finally return all important structures that hold gathered information and spectra
+    return star_data, obs_metadata, ref_flx_new
