@@ -120,11 +120,12 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
         plt.savefig(plot+'_2.png', dpi=200)
         plt.close()
 
-    if log_shift_wvl < 2.:
+    if log_shift_wvl < 5.:
         # return np.nanmedian(rv_shifts_max)
         return np.nanmedian(rv_shifts), np.nanmedian(ref_wvl)
     else:
         # something went wrong
+        print('    Large wvl shift detected.')
         return np.nan, np.nanmedian(ref_wvl)
 
 
@@ -152,6 +153,7 @@ def correlate_order(obs_flx, obs_wvl,
     # resample data to the same wavelength step
     idx_ref_use = np.logical_and(ref_wvl >= wvl_beg, ref_wvl <= wvl_end)
     if np.sum(idx_ref_use) < 20:
+        print('    Short spectral overlap, skipping order ({:.0f} - {:.0f}).'.format(wvl_beg, wvl_end))
         return np.nan, np.nanmedian(ref_wvl[idx_ref_use])
 
     ref_wvl_use = deepcopy(ref_wvl[idx_ref_use])
@@ -170,8 +172,8 @@ def correlate_order(obs_flx, obs_wvl,
         else:
             return correlate_spectra(obs_flx_use, ref_wvl_use, ref_flx_use, ref_wvl_use,
                                      cont_value=cont_value)
-    except:
-        print('    Correlation problem')
+    except Exception as e:
+        print('    Correlation problem:', e)
         return np.nan, np.nanmedian(ref_wvl[idx_ref_use])
 
 
@@ -185,6 +187,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
     :param rv_ref_wvl:
     :param rv_ref_val:
     :param use_flx_key:
+    :param cont_value:
     :param plot_rv:
     :param plot_path:
     :return:
@@ -213,7 +216,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
     rv_shifts = np.array(rv_shifts)
     rv_median = np.nanmedian(rv_shifts)
     # remove gross outliers before computing rv std value
-    rv_shifts[np.abs(rv_shifts - rv_median) > 10.] = np.nan
+    # rv_shifts[np.abs(rv_shifts - rv_median) > 10.] = np.nan
     n_fin_rv = np.sum(np.isfinite(rv_shifts))
     # cumpute final RV values
     rv_median = np.nanmedian(rv_shifts)
@@ -224,8 +227,8 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
     if plot_rv and np.isfinite(rv_median):
         plt.scatter(echelle_orders, rv_shifts)
         plt.axhline(rv_median, label='Median RV', c='C3', ls='--')
-        plt.ylim(rv_median - 6.,
-                 rv_median + 6.)
+        # plt.ylim(rv_median - 6.,
+        #          rv_median + 6.)
         plt.xlim(np.nanmin(echelle_orders) - 25.,
                  np.nanmax(echelle_orders) + 25.)
         if rv_ref_val is not None:
@@ -251,6 +254,7 @@ def get_RV_custom_corr_combined(exposure_data, rv_ref_flx, rv_ref_wvl,
     :param rv_ref_wvl:
     :param rv_ref_val:
     :param use_flx_key:
+    :param cont_value:
     :param plot_rv:
     :param plot_path:
     :return:
@@ -272,8 +276,8 @@ def get_RV_custom_corr_combined(exposure_data, rv_ref_flx, rv_ref_wvl,
         rv_combined, _ = correlate_spectra(flx_exposure_comb[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
                                            rv_ref_flx[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
                                            cont_value=cont_value)
-    except:
-        print('   Combined correlation problem')
+    except Exception as e:
+        print('   Combined correlation problem:', e)
         return np.nan, np.nan
 
     # TODO: determine uncertainty of the determined radial velocity
@@ -313,10 +317,15 @@ def add_rv_to_metadata(star_data, star_id,
         ax.errorbar(obs_metadata['phase'][idx_cols_plot], obs_metadata[rv_col][idx_cols_plot],
                     yerr=obs_metadata['e_' + rv_col][idx_cols_plot],
                     c='black', fmt='o', ms=1, elinewidth=0.2, lw=0)
+        # add textural labels to the plot
+        for rv_row in obs_metadata[idx_cols_plot]:
+            if np.isfinite(rv_row[rv_col]):
+                ax.text(rv_row['phase']+0.01, rv_row[rv_col], rv_row['filename'],
+                        fontsize=2, va='center')
         ax.set(xlim=(-0.05, 1.05), xlabel='Orbital phase', ylabel='Radial velocity [km/s]')
         ax.grid(ls='--', alpha=0.2, color='black')
         fig.tight_layout()
-        fig.savefig(plot_path, dpi=300)
+        fig.savefig(plot_path, dpi=350)
         plt.close(fig)
 
     # return updated table with metadata about individual exposures

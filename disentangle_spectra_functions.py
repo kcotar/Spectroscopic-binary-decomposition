@@ -5,6 +5,8 @@ from os import scandir, path  # scandir introduced in py3.x
 from copy import deepcopy
 from scipy.interpolate import splrep, splev
 from scipy.signal import savgol_filter, medfilt
+from scipy.optimize import minimize
+from astropy.io import fits
 from common_helper_functions import _order_exposures_by_key, _valid_orders_from_keys, correct_wvl_for_rv, _combine_orders, _spectra_resample
 from rv_helper_functions import get_RV_ref_spectrum, get_RV_custom_corr_perorder, get_RV_custom_corr_combined, add_rv_to_metadata
 
@@ -81,6 +83,18 @@ def get_spectral_data(star, wvl_orders, in_dir,
         if len(all_norm_orders) > 0:
             # create new dictionary that will hold the data of selected order for a given exposure
             star_data_all[exposure] = {}
+            # if available read vhelio velocity from the original reduction fits file
+            vh_key = 'VHELIO'
+            vhelio = np.nan
+            # open and read original reduced fits file
+            orig_fits = fits.open(input_dir + exposure + '.fits')
+            header_fits = orig_fits[0].header
+            if vh_key in header_fits.keys():
+                vhelio = header_fits[vh_key]
+            orig_fits.close()
+            # add vhelio velocity to the data structure
+            star_data_all[exposure][vh_key] = vhelio
+            # read data of individual orders and save them into the structure
             for get_wvl_order in wvl_orders:
                 order_data = get_orderdata_by_wavelength(input_dir + exposure + '/',
                                                          all_norm_orders, get_wvl_order)
@@ -321,34 +335,73 @@ def renorm_exposure_perorder(exposure_data, ref_flx, ref_wvl,
                                                     order=4, func='poly', return_fit=True)
             # renorm order
             exposure_data[echelle_order_key][output_flx_key] = order_flx / ref_flx_norm_curve
-        except:
-            print('   Renormalization problem for:', echelle_order_key)
+
+            if plot:
+                fig, ax = plt.subplots(2, 1, sharex=True, figsize=(15, 5))
+                ax[0].plot(order_wvl, order_flx, lw=0.5)
+                ax[0].plot(order_wvl, ref_flx_order, lw=0.5)
+                ax[0].plot(order_wvl, order_flx / ref_flx_norm_curve, lw=0.5)
+                ax[1].plot(order_wvl, order_flx / ref_flx_order, lw=0.5)
+                ax[1].plot(order_wvl, ref_flx_norm_curve, lw=0.5)
+                ax[1].set(xlim=[order_wvl[0]-0.2, order_wvl[-1]+0.2])
+                fig.tight_layout()
+                fig.subplots_adjust(hspace=0, wspace=0)
+                if plot_path is None:
+                    fig.show()
+                else:
+                    fig.savefig(plot_path[:-4] + '_' + str(echelle_order_key) + '.png', dpi=150)
+                plt.close(fig)
+
+        except Exception as e:
+            print('   Renormalization problem for:', echelle_order_key, e)
             exposure_data[echelle_order_key][output_flx_key] = order_flx
 
     # return original data with addition of a renormed spectrum
     return exposure_data
 
 
+def _flx_amp(flx, amp, cont=1.):
+    """
+
+    :param flx:
+    :param amp:
+    :return:
+    """
+    return cont - amp * (cont - flx)
+
+
 def remove_ref_from_exposure(exposure_data, ref_flx, ref_wvl,
+                             primary=True,
                              use_rv_key='RV_s1',
                              input_flx_key='flx',
+                             fit_before_removal=False,
                              output_flx_key='flx_secon',
                              ref_orig=None, w_filt=None,
-                             plot=False, plot_path='plot.png'):
+                             plot=False, plot_path='plot.png',
+                             verbose=True):
     """
 
     :param exposure_data:
     :param ref_flx:
     :param ref_wvl:
+    :param primary:
     :param use_rv_key:
     :param input_flx_key:
+    :param fit_before_removal:
     :param output_flx_key:
     :param ref_orig:
+    :param w_filt:
     :param plot:
     :param plot_path:
+    :param verbose:
     :return:
     """
-    rv_val_star = exposure_data[use_rv_key]
+    if use_rv_key not in exposure_data.keys():
+        if verbose:
+            print('   WARNING: Given RV key (' + use_rv_key + ') not found -> RV = 0. will be used.')
+        rv_val_star = 0.
+    else:
+        rv_val_star = exposure_data[use_rv_key]
     # shift reference spectrum from stars' rest to barycentric/observed reference frame - use reversed RV value
     ref_wvl_shifted = correct_wvl_for_rv(ref_wvl, -1. * rv_val_star)
 
@@ -362,6 +415,34 @@ def remove_ref_from_exposure(exposure_data, ref_flx, ref_wvl,
 
         # resample reference spectrum to the observed wavelength pixels
         ref_flx_order = _spectra_resample(ref_flx, ref_wvl_shifted, order_wvl)
+
+        # adjust/force reference flux to have the same amplitude as observed spectrum
+        # useful for stars with lower snr and/or reduction problems
+        if fit_before_removal:
+            # helper function used in the minimization process
+            def min_flx_dif_prim(amp):
+                # manhattan spectral distance between two spectra
+                return np.sum(np.abs((order_flx - 1.) - _flx_amp(ref_flx_order, amp, cont=0.)))
+
+            def min_flx_dif_sec(amp):
+                # manhattan spectral distance between two spectra
+                return np.sum(np.abs(order_flx - _flx_amp(ref_flx_order, amp, cont=1.)))
+
+            # minimize difference between observed and reference spectrum
+            if primary:
+                min_res = minimize(min_flx_dif_prim, [1.], bounds=[(0., 2.)])
+            else:
+                min_res = minimize(min_flx_dif_sec, [1.], bounds=[(0., 2.)])
+
+            # get the best amplitude correction factor
+            amp_use = min_res['x'][0]
+            if verbose:
+                print('   Flx amp modification (order - ' + str(echelle_order_key) + '): {:.3f}'.format(amp_use))
+            # correct flux for determined amplitude
+            if primary:
+                ref_flx_order = _flx_amp(ref_flx_order, amp_use, cont=0.)
+            else:
+                ref_flx_order = _flx_amp(ref_flx_order, amp_use, cont=1.)
 
         # remove contribution of a reference spectrum by a simple spectral substraction
         order_flx_diff = order_flx - ref_flx_order
@@ -377,23 +458,30 @@ def remove_ref_from_exposure(exposure_data, ref_flx, ref_wvl,
         flx_seco_comb = _combine_orders(exposure_data, ref_wvl_shifted,
                                         use_flx_key=output_flx_key, use_rv_key=None)
 
-        y_range = np.nanpercentile(ref_flx, [0.4, 99.6])
+        y_range = np.nanpercentile(flx_orig_comb, [0.4, 99.6])
         flx_offset = 0.75 * (y_range[1] - y_range[0])
         wvl_range = (np.min(ref_wvl_shifted[np.isfinite(flx_orig_comb)]) - 2.,
                      np.max(ref_wvl_shifted[np.isfinite(flx_orig_comb)]) + 2.)
         x_ticks = range(4500, 7000, 20)
         x_ticks_str = [str(xt) for xt in x_ticks]
 
-        fig, ax = plt.subplots(1, 1, figsize=(100, 5.))
-        ax.plot(ref_wvl_shifted, flx_orig_comb + (flx_offset * 1), lw=0.7, alpha=0.9)
-        ax.plot(ref_wvl_shifted, flx_seco_comb + 1. + (flx_offset * 2), lw=0.7, alpha=0.9)
-        # ax.plot(ref_wvl_shifted, medfilt(flx_seco_comb + 1. + (flx_offset * 2), 19), lw=0.7, alpha=0.9, c='black')
-        ax.plot(ref_wvl_shifted, ref_flx, c='black', lw=0.8)
+        fig, ax = plt.subplots(1, 1, figsize=(120, 5.))
+
+        if primary:
+            ax.plot(ref_wvl_shifted, flx_orig_comb, c='C3', lw=0.7, alpha=0.8)
+            ax.plot(ref_wvl_shifted, 1. + ref_flx, c='black', lw=0.5, alpha=0.8)
+            ax.plot(ref_wvl_shifted, 0.04 + flx_seco_comb, c='C2', lw=0.7, alpha=0.8)
+        else:
+            ax.plot(ref_wvl_shifted, flx_orig_comb, c='C3', lw=0.7, alpha=0.8)
+            ax.plot(ref_wvl_shifted, ref_flx, c='black', lw=0.5, alpha=0.8)
+            ax.plot(ref_wvl_shifted, 1.04 + flx_seco_comb, c='C2', lw=0.7, alpha=0.8)
+
+        ax.axhline(1.04, c='black', ls='--', lw=0.5, alpha=0.9)
         if ref_orig is not None:
             ax.plot(ref_wvl_shifted, ref_orig - flx_offset, c='red', lw=0.8)
             y_range[0] -= flx_offset
         ax.set(xlim=wvl_range,
-               ylim=y_range + np.array([0, flx_offset * 2]),
+               ylim=[y_range[0], 1.05],
                xlabel='Wavelength [A]', ylabel='Normalized and median removed flux',
                xticks=x_ticks, xticklabels=x_ticks_str)
         ax.grid(ls='--', alpha=0.2, color='black')
@@ -414,6 +502,7 @@ def _are_orders_renormed(exposures_data, input_key):
     """
 
     :param exposures_data:
+    :param input_key:
     :return:
     """
     exposures_all = list(exposures_data.keys())
@@ -432,26 +521,39 @@ def _are_orders_renormed(exposures_data, input_key):
 
 def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  # datasets and tables
                                                      ref_flx, ref_wvl,  # spectral reference data
-                                                     star_id='', in_flx_key = 'flx', rv_key='RV_s1', # exact data that will be used
+                                                     star_id='', in_flx_key='flx', rv_key='RV_s1', # exact data that will be used
                                                      primary=True,  # are we processing the most obvoius spectral component
-                                                     renorm_orders=True, combined_rv_spectrum=False,  # processing settings
+                                                     combined_rv_spectrum=False,  # processing settings
                                                      save_plots=True, plot_prefix='', plot_suffix='',  # plotting settings
                                                      verbose=True,   # screen verbocity setting
                                                      ):
+    """
 
+    :param star_data:
+    :param obs_metadata:
+    :param ref_flx:
+    :param ref_wvl:
+    :param star_id:
+    :param in_flx_key:
+    :param rv_key:
+    :param primary:
+    :param combined_rv_spectrum:
+    :param save_plots:
+    :param plot_prefix:
+    :param plot_suffix:
+    :param verbose:
+    :return:
+    """
     # some component specific processing and output settings
     if primary:
         c_id = 1
-        cont_value=1.
+        cont_value = 1.
     else:
         c_id = 2
-        cont_value=0.
+        cont_value = 0.
 
     # set flux dataset that will be used in the processing
     use_flx_key = deepcopy(in_flx_key)
-    if renorm_orders and _are_orders_renormed(star_data, use_flx_key):
-        # use renormalized orders (per order and not global normalization)
-        use_flx_key += '_renorm'
 
     if verbose:
         print('  Spectra used for RV determination:', use_flx_key)
@@ -467,7 +569,7 @@ def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  #
             rv_med, rv_std = get_RV_custom_corr_combined(deepcopy(star_data[exp_id]), ref_flx, ref_wvl,
                                                          cont_value=cont_value,
                                                          rv_ref_val=None, use_flx_key=use_flx_key,
-                                                         plot_rv=save_plots, plot_path=rv_png)
+                                                         plot_rv=True, plot_path=rv_png)
             if verbose:
                 print('   Combined RV value:', rv_med, rv_std)
         else:
@@ -476,7 +578,7 @@ def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  #
             rv_med, rv_std = get_RV_custom_corr_perorder(deepcopy(star_data[exp_id]), ref_flx, ref_wvl,
                                                          cont_value=cont_value,
                                                          rv_ref_val=None, use_flx_key=use_flx_key,
-                                                         plot_rv=save_plots, plot_path=rv_png)
+                                                         plot_rv=True, plot_path=rv_png)
             if verbose:
                 print('   Median RV value:', rv_med, rv_std)
 
@@ -484,25 +586,8 @@ def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  #
         star_data[exp_id][rv_key] = rv_med
         star_data[exp_id]['e_' + rv_key] = rv_std
 
-    # renormalize original Echell spectrum orders at every iteration if nedded
-    if renorm_orders:
-        for exp_id in star_data.keys():
-            if verbose:
-                print('  Renormalizing exposure:', exp_id)
-
-            # compute mean RV from all considered orders
-            star_exposure_new = renorm_exposure_perorder(deepcopy(star_data[exp_id]), ref_flx, ref_wvl,
-                                                         use_rv_key=rv_key,
-                                                         input_flx_key=in_flx_key,
-                                                         output_flx_key=in_flx_key+'_renorm',
-                                                         plot=save_plots, plot_path=None)
-            star_data[exp_id] = star_exposure_new
-
     # compute median spectrum of a secondary star and use it as a new and updated RV template
     use_flx_key_median = deepcopy(in_flx_key)
-    if renorm_orders:
-        # use renormalized orders (per order and not global normalization)
-        use_flx_key_median += '_renorm'
 
     if verbose:
         print(' Creating median reference spectrum')
@@ -510,9 +595,9 @@ def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  #
     # get new reference spectrum as median of all alligned spectra, per wvl pixel std is also computed and returned 
     ref_flx_new, _ = create_new_reference(star_data, ref_wvl,
                                           # percentile=85.,
-                                          w_filt=15,
+                                          w_filt=13,
                                           use_flx_key=use_flx_key_median, use_rv_key=rv_key,
-                                          plot_combined=save_plots, plot_shifted=True,
+                                          plot_combined=True, plot_shifted=save_plots,
                                           plot_path=combined_png)
 
     # Add RV values of a binary star to the observations metadata table and plot phase RV diagram
@@ -524,3 +609,17 @@ def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  #
 
     # finally return all important structures that hold gathered information and spectra
     return star_data, obs_metadata, ref_flx_new
+
+
+def show_spectra_heliocentric(star_data, order):
+    fig, ax = plt.subplots(1, 1, figsize=(30, 5))
+    for exp_is in star_data.keys():
+        exposure_data = star_data[exp_is]
+        y_flx = exposure_data[order]['flx']
+        x_wvl = exposure_data[order]['wvl']
+        x_wvl = correct_wvl_for_rv(x_wvl, -1. * exposure_data['VHELIO'])
+        ax.plot(x_wvl, y_flx, lw=0.5, alpha=0.5)
+    fig.tight_layout()
+    fig.savefig('spec_helio_'+str(order)+'.png', dpi=300)
+    plt.close(fig)
+    return True
