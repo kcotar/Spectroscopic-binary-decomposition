@@ -1,8 +1,8 @@
 import numpy as np
 import joblib
 
-from rv_helper_functions import get_RV_ref_spectrum
-from disentangle_spectra_functions import show_spectra_heliocentric, run_complete_RV_and_template_discovery_procedure, get_spectral_data, create_new_reference, renorm_exposure_perorder, remove_ref_from_exposure
+from rv_helper_functions import get_RV_ref_spectrum, plot_rv_perorder_scatter
+from disentangle_spectra_functions import plot_combined_spectrum_using_RV, show_spectra_heliocentric, run_complete_RV_and_template_discovery_procedure, get_spectral_data, create_new_reference, renorm_exposure_perorder, remove_ref_from_exposure
 from copy import deepcopy, copy
 from os import system, path
 from astropy.table import Table
@@ -11,9 +11,13 @@ from astropy.table import Table
 # --------------------------------------------------------------------------------
 # --------------------------- Input data setting ---------------------------------
 # --------------------------------------------------------------------------------
+# define initial reference spectra for the determination of radial velocity
 ref_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/rv_ref/'
-ref_file = ['T06500G40M05V000K2SNWNVR20N.fits',
+ref_file = ['T05500G40M05V000K2SNWNVR20N.fits',
             'T05500G40M05V000K2SNWNVR20N.fits']
+# read tellurics data
+tellurics_dir = '/shared/ebla/cotar/Telluric_data/'
+tellurics_data = np.loadtxt(tellurics_dir + 'telluric_spectra_conv.dat')
 
 
 # --------------------------------------------------------------------------------
@@ -21,15 +25,18 @@ ref_file = ['T06500G40M05V000K2SNWNVR20N.fits',
 # --------------------------------------------------------------------------------
 root_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/'
 stars = ['GZ_Dra', 'TV_LMi']
-# order_centers = [4980, 5100, 5210, 5340, 5460, 5610]
-order_centers = [4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580]
+# all possible order centers in the acquired Echelle spectra
+# order_centers = [3790, 3855, 3910, 3990, 4060, 4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580, 6770, 6980, 7210]
+# orders to be loaded from the whole Echelle spectral range
+order_centers = [4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580]
 obs_metadata = Table.read(root_dir + 'star_data_all.csv')
 
-renorm_orders = True
-new_spectra_only = True
+renorm_orders = True  # should we renormalize orders at the end of an iteration
+new_spectra_only = True  # uses only newer spectra with higher SNR and better quality
 combined_rv_spectrum = False  # False -> produces one RV measurement per Echelle order
-n_rv_star_iterations = 15  # number of iterations per star
-n_rv_iterations = 1  # number of iterations per component per star iteration
+fit_before_removal = False  # do we fit individual components before they are removed from the spectrum
+n_rv_star_iterations = 3  # number of iterations per star
+n_rv_iterations = 2  # number of iterations per component per star iteration
 
 dump_input_data = True
 additional_verbose = True
@@ -51,6 +58,8 @@ if renorm_orders:
     results_dir += '_renorm'
 if combined_rv_spectrum:
     results_dir += '_combRVspec'
+if not fit_before_removal:
+    results_dir += '_noremovalfit'
 results_dir += '/'
 system('mkdir ' + results_dir)
 
@@ -73,20 +82,22 @@ for i_str, star_id in enumerate(stars):
             joblib.dump(star_data, pkl_input_data)
     print(star_data.keys())
 
-    # for visual reduction inspection
-    for p_ord in order_centers:
-        show_spectra_heliocentric(star_data, p_ord)
+    # # plot spectra in heliocentric frame - only for visual inspection of reduction
+    # print(' Plotting spectra in a observed frame, including telluric reference spectrum')
+    # for p_ord in order_centers:
+    #     show_spectra_heliocentric(star_data, p_ord,
+    #                               tellurics_data=tellurics_data, prefix=str(star_id) + '_')
 
     # load initial reference file that will be used for initial RV determination
     ref_flx_orig, ref_wvl = get_RV_ref_spectrum(ref_dir + ref_file[i_str])
-    # initial primary, secondary and terciary reference flux
-    ref_flx_s1 = np.full_like(ref_flx_orig, fill_value=1.)
-    ref_flx_s2 = np.full_like(ref_flx_orig, fill_value=0.)
-    ref_flx_s3 = np.full_like(ref_flx_orig, fill_value=0.)
+    # initial primary, secondary and tertiary reference flux
+    ref_flx_s1 = np.full_like(ref_flx_orig, fill_value=1.)  # primary
+    ref_flx_s2 = np.full_like(ref_flx_orig, fill_value=0.)  # secondary
+    ref_flx_s3 = np.full_like(ref_flx_orig, fill_value=0.)  # tertiary
 
     # --------------------------------------------------------------------------------
     # --------------------------------------------------------------------------------
-    # ------------ Main part of the binary disentaglement program  -------------------
+    # ----------- Main part of the binary disentanglement procedure  -----------------
     # --------------------------------------------------------------------------------
     # --------------------------------------------------------------------------------
     pkl_input_data_s1 = results_dir + star_id + '_input_data_s1.pkl'
@@ -141,7 +152,7 @@ for i_str, star_id in enumerate(stars):
                                                                  primary=True,
                                                                  use_rv_key='RV_s2',
                                                                  input_flx_key=input_flx_key,
-                                                                 fit_before_removal=(True and i_it_star > 0),
+                                                                 fit_before_removal=(fit_before_removal and i_it_star > 0),
                                                                  output_flx_key='flx1',
                                                                  ref_orig=None, w_filt=None,
                                                                  plot=True, plot_path=ref_removal_png,
@@ -176,7 +187,7 @@ for i_str, star_id in enumerate(stars):
                                                              primary=False,
                                                              use_rv_key='RV_s1',
                                                              input_flx_key=input_flx_key,
-                                                             fit_before_removal=True,
+                                                             fit_before_removal=fit_before_removal,
                                                              output_flx_key='flx2',
                                                              ref_orig=None, w_filt=None,
                                                              plot=True, plot_path=ref_removal_png,
@@ -217,18 +228,39 @@ for i_str, star_id in enumerate(stars):
 
             # renormalize original Echelle spectrum orders at every iteration if needed
             if renorm_orders:
+                # always use original data for the renormalization process
+                input_flx_key_renorm = 'flx'
+                # begin per order normalization process using the reference spectrum
                 for exp_id in star_data.keys():
                     if additional_verbose:
                         print('  Renormalizing exposure:', exp_id)
 
-                    # compute mean RV from all considered orders
+                    # renorm using determined RV and make plots
                     exp_renorm_png = plot_prefix_all + '_' + exp_id + '_renorm.png'
                     star_exposure_new = renorm_exposure_perorder(deepcopy(star_data[exp_id]), ref_flx_renorm, ref_wvl,
                                                                  use_rv_key='RV_s1',
-                                                                 input_flx_key=input_flx_key,
-                                                                 output_flx_key=input_flx_key + '_renorm',
+                                                                 input_flx_key=input_flx_key_renorm,
+                                                                 output_flx_key=input_flx_key_renorm + '_renorm',
                                                                  plot=save_all_plots, plot_path=exp_renorm_png)
                     star_data[exp_id] = star_exposure_new
+
+            # --------------------------------------------------------------------------------
+            # ----- Plot combined primary and secondary component with original spectrum  ----
+            # --------------------------------------------------------------------------------
+            if True:  # save_all_plots
+                for exp_id in star_data.keys():
+                    components_png = plot_prefix_all + '_' + exp_id + '_components.png'
+                    plot_combined_spectrum_using_RV(deepcopy(star_data[exp_id]),
+                                                    ref_flx_s1, ref_flx_s2, ref_wvl,
+                                                    prim_rv='RV_s1', sec_rv='RV_s2', input_flx_key=input_flx_key,
+                                                    plot=True, plot_path=components_png)
+            print('Scatter plot', (not combined_rv_spectrum) and True)
+            if (not combined_rv_spectrum) and True:  # save_all_plots
+                print('do scatter rv plots')
+                plot_rv_perorder_scatter(star_data, rv_key='RV_s1',
+                                         plot_path=plot_prefix_all + '_RV1_scatter.png')
+                plot_rv_perorder_scatter(star_data, rv_key='RV_s2',
+                                         plot_path=plot_prefix_all + '_RV2_scatter.png')
 
 '''
         if dump_input_data:

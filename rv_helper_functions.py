@@ -241,7 +241,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
         plt.close()
 
     # return all derived velocities and its std values
-    return rv_median, rv_std
+    return rv_shifts, rv_median, rv_std
 
 
 def get_RV_custom_corr_combined(exposure_data, rv_ref_flx, rv_ref_wvl,
@@ -330,3 +330,29 @@ def add_rv_to_metadata(star_data, star_id,
 
     # return updated table with metadata about individual exposures
     return obs_metadata
+
+
+def plot_rv_perorder_scatter(star_data,
+                             rv_key='RV_s1', plot_path='plot.png'):
+    """
+
+    :param star_data:
+    :param rv_key:
+    :param plot_path:
+    :return:
+    """
+    fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+    for exp_id in star_data.keys():
+        exposure = star_data[exp_id]
+        x_data = _valid_orders_from_keys(exposure.keys())
+        y_data = np.array(exposure[rv_key + '_orders'])
+        y_med = exposure[rv_key]
+        ax.scatter(x_data, y_data-y_med, lw=0, s=2, label=exp_id)
+    # save and configure plot
+    ax.set(xlabel='Order center [A]', ylabel='Radial velocity [km/s]')
+    ax.grid(ls='--', alpha=0.2, color='black')
+    fig.tight_layout()
+    fig.savefig(plot_path, dpi=250)
+    plt.close(fig)
+
+    return True

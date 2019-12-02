@@ -78,7 +78,7 @@ def get_spectral_data(star, wvl_orders, in_dir,
                 # skipp older exposures that might be of worse quality
                 continue
         # get all possible orders
-        print('Exploring exposures of:', exposure)
+        print('Exploring orders of exposure:', exposure)
         all_norm_orders = _get_normalised_orders(input_dir, exposure)
         if len(all_norm_orders) > 0:
             # create new dictionary that will hold the data of selected order for a given exposure
@@ -313,6 +313,7 @@ def renorm_exposure_perorder(exposure_data, ref_flx, ref_wvl,
     :param plot_path:
     :return:
     """
+    print('   Input normalization flux key is', input_flx_key, 'and RV key is', use_rv_key)
     rv_val_star = exposure_data[use_rv_key]
     # shift reference spectrum from stars' rest to barycentric/observed reference frame - use reversed RV value
     ref_wvl_shifted = correct_wvl_for_rv(ref_wvl, -1.*rv_val_star)
@@ -575,14 +576,15 @@ def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  #
         else:
             # compute mean RV from all considered orders
             rv_png = plot_prefix + '_' + exp_id + '_rv' + str(c_id) + '-orders' + plot_suffix + '.png'
-            rv_med, rv_std = get_RV_custom_corr_perorder(deepcopy(star_data[exp_id]), ref_flx, ref_wvl,
-                                                         cont_value=cont_value,
-                                                         rv_ref_val=None, use_flx_key=use_flx_key,
-                                                         plot_rv=True, plot_path=rv_png)
+            rv_all, rv_med, rv_std = get_RV_custom_corr_perorder(deepcopy(star_data[exp_id]), ref_flx, ref_wvl,
+                                                                 cont_value=cont_value,
+                                                                 rv_ref_val=None, use_flx_key=use_flx_key,
+                                                                 plot_rv=True, plot_path=rv_png)
             if verbose:
                 print('   Median RV value:', rv_med, rv_std)
+            star_data[exp_id][rv_key + '_orders'] = rv_all
 
-        # store values to the dictionary
+            # store values to the dictionary
         star_data[exp_id][rv_key] = rv_med
         star_data[exp_id]['e_' + rv_key] = rv_std
 
@@ -611,15 +613,100 @@ def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  #
     return star_data, obs_metadata, ref_flx_new
 
 
-def show_spectra_heliocentric(star_data, order):
-    fig, ax = plt.subplots(1, 1, figsize=(30, 5))
+def show_spectra_heliocentric(star_data, order,
+                              tellurics_data=None, prefix=''):
+    """
+
+    :param star_data:
+    :param order:
+    :param tellurics_data:
+    :param prefix:
+    :return:
+    """
+    fig, ax = plt.subplots(1, 1, figsize=(85, 5))
+    w_min = 10000
+    w_max = 0
     for exp_is in star_data.keys():
         exposure_data = star_data[exp_is]
+        if order not in exposure_data.keys():
+            continue
         y_flx = exposure_data[order]['flx']
         x_wvl = exposure_data[order]['wvl']
-        x_wvl = correct_wvl_for_rv(x_wvl, -1. * exposure_data['VHELIO'])
-        ax.plot(x_wvl, y_flx, lw=0.5, alpha=0.5)
+        x_wvl = correct_wvl_for_rv(x_wvl, exposure_data['VHELIO'])  # + or - VHELIO??
+        w_min = min(w_min, np.nanmin(x_wvl))
+        w_max = max(w_max, np.nanmax(x_wvl))
+        ax.plot(x_wvl, y_flx, lw=0.5, alpha=0.6)
+    # add telluric reference spectrum to the combined plot
+    if tellurics_data is not None:
+        ax.plot(tellurics_data[:, 0], tellurics_data[:, 1], lw=0.7, alpha=0.75, c='black')
+    # additional plotting settings
+    ax.set(ylim=(0.8, 1.05), xlim=(w_min, w_max))
+    ax.grid(ls='--', alpha=0.2, color='black')
     fig.tight_layout()
-    fig.savefig('spec_helio_'+str(order)+'.png', dpi=300)
+    fig.savefig(prefix + 'spec_helio_'+str(order)+'.png', dpi=150)
     plt.close(fig)
     return True
+
+
+def plot_combined_spectrum_using_RV(exposure_data,
+                                    ref_flx_s1, ref_flx_s2, ref_wvl,
+                                    prim_rv='RV_s1', sec_rv='RV_s2', input_flx_key='flx',
+                                    plot=True, plot_path='plot.png'):
+    """
+
+    :param exposure_data:
+    :param ref_flx_s1:
+    :param ref_flx_s2:
+    :param ref_wvl:
+    :param prim_rv:
+    :param sec_rv:
+    :param input_flx_key:
+    :param plot:
+    :param plot_path:
+    :return:
+    """
+
+    # loop trough all available orders
+    flx_orig_comb = _combine_orders(exposure_data, ref_wvl,
+                                    use_flx_key=input_flx_key, use_rv_key=None)
+    # shift reference spectra into observed stars frame
+    use_wvl_s1 = correct_wvl_for_rv(ref_wvl, -1. * exposure_data[prim_rv])
+    use_wvl_s2 = correct_wvl_for_rv(ref_wvl, -1. * exposure_data[sec_rv])
+    # resample reference spectra to match with observed wavelength spacing
+    use_flx_s1 = _spectra_resample(ref_flx_s1, use_wvl_s1, ref_wvl)
+    use_flx_s2 = _spectra_resample(ref_flx_s2, use_wvl_s2, ref_wvl)
+
+    # determine plotting settings
+    y_range = np.nanpercentile(flx_orig_comb, [0.4, 99.6])
+    wvl_range = (np.min(ref_wvl[np.isfinite(flx_orig_comb)]) - 2.,
+                 np.max(ref_wvl[np.isfinite(flx_orig_comb)]) + 2.)
+    x_ticks = range(4500, 7000, 20)
+    x_ticks_str = [str(xt) for xt in x_ticks]
+
+    if plot:
+        # plot everything together
+        fig, ax = plt.subplots(2, 1, figsize=(120, 8.), sharex=True)
+        # individual plots
+        ax[0].plot(ref_wvl, flx_orig_comb, c='black', lw=0.8, alpha=0.9, label='Original')
+        ax[0].plot(ref_wvl, use_flx_s1, c='C2', lw=0.6, alpha=0.9, label='Spectrum 1')
+        ax[0].plot(ref_wvl, 1.0 + use_flx_s2, c='C3', lw=0.6, alpha=0.9, label='Spectrum 2')
+        # residual towards original spectrum
+        flx_res = flx_orig_comb - (use_flx_s1 + use_flx_s2)
+        y_range2 = np.nanpercentile(flx_res, [0.3, 99.7])
+        ax[1].plot(ref_wvl, flx_res, c='black', lw=0.7, alpha=1)
+        # make nicer looking plot with labels etc
+        ax[0].set(ylim=[y_range[0], 1.03],
+                  ylabel='Normalized flux')
+        ax[1].set(xlim=wvl_range, ylim=y_range2,
+                  xlabel='Wavelength [A]', ylabel='Residual',
+                  xticks=x_ticks, xticklabels=x_ticks_str)
+        ax[0].grid(ls='--', alpha=0.2, color='black')
+        ax[1].grid(ls='--', alpha=0.2, color='black')
+        ax[0].legend()
+        fig.tight_layout()
+        fig.subplots_adjust(hspace=0, wspace=0)
+        fig.savefig(plot_path, dpi=150)
+        plt.close(fig)
+        return True
+    else:
+        return False
