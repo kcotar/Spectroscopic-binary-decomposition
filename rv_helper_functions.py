@@ -43,7 +43,7 @@ def spectra_logspace(flx, wvl):
 
 
 def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
-                      plot=None, cont_value=1.):
+                      plot=False, plot_path='plot.png', cont_value=1.):
     """
 
     :param obs_flx:
@@ -51,17 +51,21 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
     :param ref_flx:
     :param ref_wvl:
     :param plot:
+    :param plot_path:
     :param cont_value:
     :return:
     """
-
     # convert spectra sampling to logspace
     obs_flux_res_log, _ = spectra_logspace(obs_flx, obs_wvl)
     ref_flux_sub_log, wvl_log = spectra_logspace(ref_flx, ref_wvl)
     wvl_step = ref_wvl[1] - ref_wvl[0]
 
+    # fill missing values
+    obs_flux_res_log[~np.isfinite(obs_flux_res_log)] = cont_value
+    ref_flux_sub_log[~np.isfinite(ref_flux_sub_log)] = cont_value
+
     # correlate the two spectra
-    min_flux = 0.95
+    # min_flux = 0.95
     # set near continuum spectral wiggles to the continuum level
     # ref_flux_sub_log[ref_flux_sub_log > min_flux] = 1.
     # obs_flux_res_log[obs_flux_res_log > min_flux] = 1.
@@ -70,18 +74,24 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
 
     # create a correlation subset that will actually be analysed
     corr_w_size_wide = 130  # preform rough search of the local peak
-    corr_w_size = 35  # narrow down to the exact location of the CC peak
+    corr_w_size = 55  # narrow down to the exact location of the CC peak
     corr_c_off = np.int64(len(corr_res) / 2.)
-    corr_c_off += np.nanargmax(corr_res[corr_c_off - corr_w_size_wide : corr_c_off + corr_w_size_wide]) - corr_w_size_wide
+    corr_c_off += np.nanargmax(corr_res[corr_c_off - corr_w_size_wide: corr_c_off + corr_w_size_wide]) - corr_w_size_wide
     corr_pos_min = corr_c_off - corr_w_size
     corr_pos_max = corr_c_off + corr_w_size
 
-    # if plot is not None:
-    #     plt.plot(corr_res, lw=1)
-    #     plt.axvline(corr_pos_min, color='black')
-    #     plt.axvline(corr_pos_max, color='black')
-    #     plt.savefig(plot+'_1.png', dpi=300)
-    #     plt.close()
+    if plot:
+        w_multi = 6.
+        x_corr_res = np.arange(len(corr_res))
+        idx = (x_corr_res - corr_c_off) < w_multi*corr_w_size_wide
+        plt.plot(x_corr_res[idx], corr_res[idx], lw=1)
+        plt.axvline(corr_pos_min, color='black')
+        plt.axvline(corr_pos_max, color='black')
+        plt.xlim(corr_c_off - w_multi*corr_w_size_wide, corr_c_off + w_multi*corr_w_size_wide)
+        plt.ylim(np.min(corr_res[idx])-5, np.max(corr_res[idx])+5)
+        plt.tight_layout()
+        plt.savefig(plot_path[:-4] + '_corr1.png', dpi=200)
+        plt.close()
 
     # print corr_pos_min, corr_pos_max
     corr_res_sub = corr_res[corr_pos_min:corr_pos_max]
@@ -111,13 +121,15 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
     rv_shifts_max = (wvl_log_new[1:] - wvl_log_new[:-1]) / wvl_log_new[:-1] * c_val * log_shift_px_max
     rv_shifts_5 = (wvl_log_new[1:] - wvl_log_new[:-1]) / wvl_log_new[:-1] * c_val * 5
 
-    if plot is not None:
+    if plot:
         plt.plot(corr_res_sub, lw=1, color='C0')
-        plt.axvline(corr_center_max, color='C0')
+        plt.axvline(corr_center_max, color='C0', label='max', ls='--')
         plt.plot(corr_fit_res.best_fit, lw=1, color='C1')
-        plt.axvline(corr_center, color='C1')
+        plt.axvline(corr_center, color='C1', label='fit', ls='--')
+        plt.legend()
         plt.title(u'RV max: {:.2f}, RV fit: {:.2f}, $\Delta$RV per 5: {:.2f}, center wvl {:.1f}'.format(np.nanmedian(rv_shifts_max), np.nanmedian(rv_shifts), np.nanmedian(rv_shifts_5), np.nanmean(obs_wvl)))
-        plt.savefig(plot+'_2.png', dpi=200)
+        plt.tight_layout()
+        plt.savefig(plot_path[:-4] + '_corr2.png', dpi=200)
         plt.close()
 
     if log_shift_wvl < 5.:
@@ -162,16 +174,12 @@ def correlate_order(obs_flx, obs_wvl,
     obs_flx_use = np.interp(ref_wvl_use, obs_wvl, obs_flx)
 
     # add re-normalization step if needed
-    # TODO
+    # TODO -> already implemented somewhere else in the pipeline
 
     # perform correlation between the datasets
     try:
-        if plot:
-            return correlate_spectra(obs_flx_use, ref_wvl_use, ref_flx_use, ref_wvl_use,
-                                     cont_value=cont_value, plot=order_txt_file[:-4])
-        else:
-            return correlate_spectra(obs_flx_use, ref_wvl_use, ref_flx_use, ref_wvl_use,
-                                     cont_value=cont_value)
+        return correlate_spectra(obs_flx_use, ref_wvl_use, ref_flx_use, ref_wvl_use,
+                                 cont_value=cont_value, plot=plot, plot_path=plot_path)
     except Exception as e:
         print('    Correlation problem:', e)
         return np.nan, np.nanmedian(ref_wvl[idx_ref_use])
@@ -205,7 +213,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
         rv_order_val, _ = correlate_order(order_flx, order_wvl,  # observed spectrum data
                                           rv_ref_flx, rv_ref_wvl,  # reference spectrum data
                                           cont_value=cont_value,
-                                          plot=False, plot_path=plot_path)
+                                          plot=False, plot_path=plot_path[:-4] + '_{:04d}.png'.format(echelle_order_key))
         rv_shifts.append(rv_order_val)
 
     # nothing can be done if no per order RV values were determined for a given exposure/spectrum
@@ -275,7 +283,7 @@ def get_RV_custom_corr_combined(exposure_data, rv_ref_flx, rv_ref_wvl,
     try:
         rv_combined, _ = correlate_spectra(flx_exposure_comb[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
                                            rv_ref_flx[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
-                                           cont_value=cont_value)
+                                           cont_value=cont_value, plot=True, plot_path=plot_path)
     except Exception as e:
         print('   Combined correlation problem:', e)
         return np.nan, np.nan
@@ -307,7 +315,9 @@ def add_rv_to_metadata(star_data, star_id,
             if len(idx_meta_row) == 1:
                 # copy velocity and its error to the metadata
                 obs_metadata[rv_col][idx_meta_row] = star_data[exp_id][rv_col]
-                obs_metadata['e_' + rv_col][idx_meta_row] = star_data[exp_id]['e_' + rv_col]
+                if 'e_' + rv_col in star_data[exp_id].keys():
+                    # as it might not exist for some measurements (as in the case of the telluric spectrum)
+                    obs_metadata['e_' + rv_col][idx_meta_row] = star_data[exp_id]['e_' + rv_col]
 
     if plot:
         # find rows that are relevant for the selected star
@@ -341,17 +351,31 @@ def plot_rv_perorder_scatter(star_data,
     :param plot_path:
     :return:
     """
-    fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+    fig, ax = plt.subplots(3, 1, figsize=(7, 10), sharex=True)
+    y_data_all = list([])
     for exp_id in star_data.keys():
         exposure = star_data[exp_id]
-        x_data = _valid_orders_from_keys(exposure.keys())
-        y_data = np.array(exposure[rv_key + '_orders'])
+        x_data = np.array(_valid_orders_from_keys(exposure.keys()))
         y_med = exposure[rv_key]
-        ax.scatter(x_data, y_data-y_med, lw=0, s=2, label=exp_id)
+        y_data = np.array(exposure[rv_key + '_orders']) - y_med
+        y_data_all.append(y_data)
+        # add points to plots
+        ax[0].scatter(x_data, y_data, lw=0, s=3, label=exp_id)
+        ax[1].scatter(x_data, y_data, lw=0, s=3, label=exp_id)
+        ax[2].scatter(x_data, y_data, lw=0, s=3, label=exp_id)
+    # median rv displacement of all exposure, add it to plots
+    y_data_off = np.nanmedian(y_data_all, axis=0)
+    ax[0].scatter(x_data+20, y_data_off, lw=0, s=7, c='black', alpha=0.75)
+    ax[1].scatter(x_data+20, y_data_off, lw=0, s=7, c='black', alpha=0.75)
+    ax[2].scatter(x_data+20, y_data_off, lw=0, s=7, c='black', alpha=0.75)
     # save and configure plot
-    ax.set(xlabel='Order center [A]', ylabel='Radial velocity [km/s]')
-    ax.grid(ls='--', alpha=0.2, color='black')
+    ax[1].set(ylabel='Radial velocity [km/s]', ylim=(-25., 25.))
+    ax[2].set(xlabel='Order center [A]', ylim=(-8., 8.))
+    ax[0].grid(ls='--', alpha=0.2, color='black')
+    ax[1].grid(ls='--', alpha=0.2, color='black')
+    ax[2].grid(ls='--', alpha=0.2, color='black')
     fig.tight_layout()
+    fig.subplots_adjust(wspace=0, hspace=0)
     fig.savefig(plot_path, dpi=250)
     plt.close(fig)
 
