@@ -126,8 +126,9 @@ def create_new_reference(exposures_all, target_wvl,
     :return:
     """
     flx_new = list([])
-    for exposure_id in _order_exposures_by_key(exposures_all, exposures_all.keys(),
-                                               sort_key=use_rv_key):
+    all_exp_ids = _order_exposures_by_key(exposures_all, exposures_all.keys(),
+                                          sort_key=use_rv_key)
+    for exposure_id in all_exp_ids:
         exposure_data = exposures_all[exposure_id]    
         
         # combine all resampled and RV moved spectra
@@ -172,6 +173,8 @@ def create_new_reference(exposures_all, target_wvl,
         fig, ax = plt.subplots(1, 1, figsize=(90, 3. + 0.8 * n_spectra))
         for i_ex in range(n_spectra):
             ax.plot(target_wvl, flx_new[i_ex, :] + (flx_offset * (i_ex + 1)), lw=0.6, alpha=0.8)
+            ax.text(wvl_range[0]+5, 1 + + (flx_offset * (i_ex + 1)), all_exp_ids[i_ex].split('.')[0],
+                    fontsize=10, va='center')
         # ax.fill_between(target_wvl, fill_1, fill_2,
         #                 color='lightgrey', where=idx_fill)
         ax.fill_between(target_wvl, flx_new_median-flx_new_std, flx_new_median+flx_new_std,

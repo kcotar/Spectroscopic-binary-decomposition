@@ -25,7 +25,7 @@ get_tellurics_RV = False
 # ---------------------- Stars and orders data setting ---------------------------
 # --------------------------------------------------------------------------------
 root_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/'
-stars = ['GZ_Dra', 'TV_LMi']
+stars = ['V455_Aur'] #['GZ_Dra', 'TV_LMi']
 # all possible order centers in the acquired Echelle spectra
 # order_centers = [3790, 3855, 3910, 3990, 4060, 4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580, 6770, 6980, 7210]
 # select telluric orders only - for estimation of wavelength reduction correctness
@@ -41,7 +41,7 @@ renorm_orders = True  # should we renormalize orders at the end of an iteration
 new_spectra_only = True  # uses only newer spectra with higher SNR and better quality
 combined_rv_spectrum = False  # False -> produces one RV measurement per Echelle order
 fit_before_removal = False  # do we fit individual components before they are removed from the spectrum
-n_rv_star_iterations = 15  # number of iterations per star
+n_rv_star_iterations = 5  # number of iterations per star
 n_rv_iterations = 2  # number of iterations per component per star iteration
 if get_tellurics_RV:
     n_rv_star_iterations = 1
@@ -58,7 +58,7 @@ for col in ['RV_s1', 'e_RV_s1', 'RV_s2', 'e_RV_s2', 'VHELIO', 'e_VHELIO']:
 # --------------------------------------------------------------------------------
 # --------------------------- Output data setting --------------------------------
 # --------------------------------------------------------------------------------
-results_dir = root_dir + 'RV_disentangle_results'
+results_dir = root_dir + 'V455_Aur_RV_disentangle_results'
 if new_spectra_only:
     results_dir += '_newonly'
 else:
@@ -264,6 +264,16 @@ for i_str, star_id in enumerate(stars):
                                      plot_path=plot_prefix_all + '_RV1_scatter.png')
             plot_rv_perorder_scatter(star_data, rv_key='RV_s2',
                                      plot_path=plot_prefix_all + '_RV2_scatter.png')
+
+        # # TEST purpose only
+        # star_data_interesting = {}
+        # for id_e in ['EC60919.ec.vh','EC59315.ec.vh','EC59317.ec.vh','EC59319.ec.vh']:
+        #     star_data_interesting[id_e] = star_data[id_e]
+        # _, _ = create_new_reference(star_data_interesting, ref_wvl,
+        #                             w_filt=13,
+        #                             use_flx_key='flx_renorm', use_rv_key='RV_s1',
+        #                             plot_combined=False, plot_shifted=True,
+        #                             plot_path='spectra_comb_interesting_gz_dra.png')
 
 obs_metadata.write(fits_final)
 

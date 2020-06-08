@@ -283,7 +283,7 @@ def get_RV_custom_corr_combined(exposure_data, rv_ref_flx, rv_ref_wvl,
     try:
         rv_combined, _ = correlate_spectra(flx_exposure_comb[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
                                            rv_ref_flx[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
-                                           cont_value=cont_value, plot=True, plot_path=plot_path)
+                                           cont_value=cont_value, plot=False, plot_path=plot_path)
     except Exception as e:
         print('   Combined correlation problem:', e)
         return np.nan, np.nan
