@@ -16,7 +16,7 @@ ref_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/rv_ref/'
 ref_file = ['T05500G40M05V000K2SNWNVR20N.fits',
             'T05500G40M05V000K2SNWNVR20N.fits']
 # read tellurics data and enable discovery of telluric radial velocity
-tellurics_dir = '/shared/ebla/cotar/Telluric_data/'
+tellurics_dir = '/shared/mari/cotar/Telluric_data/'
 tellurics_data = np.loadtxt(tellurics_dir + 'telluric_spectra_conv.dat')
 get_tellurics_RV = False
 
@@ -24,8 +24,10 @@ get_tellurics_RV = False
 # --------------------------------------------------------------------------------
 # ---------------------- Stars and orders data setting ---------------------------
 # --------------------------------------------------------------------------------
-root_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/'
-stars = ['V455_Aur'] #['GZ_Dra', 'TV_LMi']
+# data_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/'
+data_dir = '/shared/mari/travegre/Projects/Asiago_binaries/'
+out_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/'
+stars = ['TV_LMi']  #['GZ_Dra', 'TV_LMi', 'V455_Aur']
 # all possible order centers in the acquired Echelle spectra
 # order_centers = [3790, 3855, 3910, 3990, 4060, 4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580, 6770, 6980, 7210]
 # select telluric orders only - for estimation of wavelength reduction correctness
@@ -35,7 +37,7 @@ if get_tellurics_RV:
 else:
     # orders to be loaded from the whole Echelle spectral range
     order_centers = [4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580]
-obs_metadata = Table.read(root_dir + 'star_data_all.csv')
+obs_metadata = Table.read(data_dir + 'star_data_all.csv')
 
 renorm_orders = True  # should we renormalize orders at the end of an iteration
 new_spectra_only = True  # uses only newer spectra with higher SNR and better quality
@@ -58,7 +60,7 @@ for col in ['RV_s1', 'e_RV_s1', 'RV_s2', 'e_RV_s2', 'VHELIO', 'e_VHELIO']:
 # --------------------------------------------------------------------------------
 # --------------------------- Output data setting --------------------------------
 # --------------------------------------------------------------------------------
-results_dir = root_dir + 'V455_Aur_RV_disentangle_results'
+results_dir = out_dir + 'TV_LMi_RV_disentangle_results'
 if new_spectra_only:
     results_dir += '_newonly'
 else:
@@ -86,7 +88,7 @@ for i_str, star_id in enumerate(stars):
         print('Reading exported input data: ' + pkl_input_data)
         star_data = joblib.load(pkl_input_data)
     else:
-        star_data = get_spectral_data(star_id, order_centers, root_dir,
+        star_data = get_spectral_data(star_id, order_centers, data_dir,
                                       new_only=new_spectra_only)
         # export all input data
         if dump_input_data:
@@ -275,7 +277,7 @@ for i_str, star_id in enumerate(stars):
         #                             plot_combined=False, plot_shifted=True,
         #                             plot_path='spectra_comb_interesting_gz_dra.png')
 
-obs_metadata.write(fits_final)
+obs_metadata.write(fits_final, overwrite=True)
 
 '''
         if dump_input_data:

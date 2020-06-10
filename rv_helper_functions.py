@@ -71,10 +71,12 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
     # obs_flux_res_log[obs_flux_res_log > min_flux] = 1.
     corr_res = correlate(cont_value - ref_flux_sub_log, cont_value - obs_flux_res_log,
                          mode='same', method='fft')
+    # normalize correlation by the number of involved wavelength bins
+    # corr_res /= len(corr_res)
 
     # create a correlation subset that will actually be analysed
     corr_w_size_wide = 130  # preform rough search of the local peak
-    corr_w_size = 55  # narrow down to the exact location of the CC peak
+    corr_w_size = 60  # narrow down to the exact location of the CC peak
     corr_c_off = np.int64(len(corr_res) / 2.)
     corr_c_off += np.nanargmax(corr_res[corr_c_off - corr_w_size_wide: corr_c_off + corr_w_size_wide]) - corr_w_size_wide
     corr_pos_min = corr_c_off - corr_w_size
@@ -88,7 +90,7 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
         plt.axvline(corr_pos_min, color='black')
         plt.axvline(corr_pos_max, color='black')
         plt.xlim(corr_c_off - w_multi*corr_w_size_wide, corr_c_off + w_multi*corr_w_size_wide)
-        plt.ylim(np.min(corr_res[idx])-5, np.max(corr_res[idx])+5)
+        plt.ylim(np.min(corr_res[idx])-1, np.max(corr_res[idx])+1)
         plt.tight_layout()
         plt.savefig(plot_path[:-4] + '_corr1.png', dpi=200)
         plt.close()
@@ -127,18 +129,18 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
         plt.plot(corr_fit_res.best_fit, lw=1, color='C1')
         plt.axvline(corr_center, color='C1', label='fit', ls='--')
         plt.legend()
-        plt.title(u'RV max: {:.2f}, RV fit: {:.2f}, $\Delta$RV per 5: {:.2f}, center wvl {:.1f}'.format(np.nanmedian(rv_shifts_max), np.nanmedian(rv_shifts), np.nanmedian(rv_shifts_5), np.nanmean(obs_wvl)))
+        plt.title(u'RV max: {:.2f}, RV fit: {:.2f}, $\Delta$RV per 5: {:.2f}, center wvl {:.1f} \n chi2: {:.1f}, sigma: {:.1f}, amplitude: {:.1f}, slope: {:.2f}, $\Delta$y slope: {:.1f}'.format(np.nanmedian(rv_shifts_max), np.nanmedian(rv_shifts), np.nanmedian(rv_shifts_5), np.nanmean(obs_wvl), corr_fit_res.chisqr, corr_fit_res.params['sigma'].value, corr_fit_res.params['amplitude'].value, corr_fit_res.params['slope'].value, corr_fit_res.params['slope'].value*corr_w_size*2))
         plt.tight_layout()
         plt.savefig(plot_path[:-4] + '_corr2.png', dpi=200)
         plt.close()
 
     if log_shift_wvl < 5.:
         # return np.nanmedian(rv_shifts_max)
-        return np.nanmedian(rv_shifts), np.nanmedian(ref_wvl)
+        return np.nanmedian(rv_shifts), np.nanmedian(ref_wvl), corr_fit_res.chisqr
     else:
         # something went wrong
         print('    Large wvl shift detected.')
-        return np.nan, np.nanmedian(ref_wvl)
+        return np.nan, np.nanmedian(ref_wvl), np.nan
 
 
 def correlate_order(obs_flx, obs_wvl,
@@ -182,7 +184,7 @@ def correlate_order(obs_flx, obs_wvl,
                                  cont_value=cont_value, plot=plot, plot_path=plot_path)
     except Exception as e:
         print('    Correlation problem:', e)
-        return np.nan, np.nanmedian(ref_wvl[idx_ref_use])
+        return np.nan, np.nanmedian(ref_wvl[idx_ref_use]), np.nan
 
 
 def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
@@ -202,6 +204,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
     """
     # prepare list of per order RV determinations
     rv_shifts = list([])
+    rv_fit_chi2 = list([])
     echelle_orders = _valid_orders_from_keys(exposure_data.keys())
     
     # loop trough all available orders
@@ -210,11 +213,12 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
         order_flx = exposure_data[echelle_order_key][use_flx_key]
         order_wvl = exposure_data[echelle_order_key]['wvl']
         # perform correlation with reference spectrum
-        rv_order_val, _ = correlate_order(order_flx, order_wvl,  # observed spectrum data
-                                          rv_ref_flx, rv_ref_wvl,  # reference spectrum data
-                                          cont_value=cont_value,
-                                          plot=False, plot_path=plot_path[:-4] + '_{:04d}.png'.format(echelle_order_key))
+        rv_order_val, _, chi2_order_fit = correlate_order(order_flx, order_wvl,  # observed spectrum data
+                                                          rv_ref_flx, rv_ref_wvl,  # reference spectrum data
+                                                          cont_value=cont_value,
+                                                          plot=False, plot_path=plot_path[:-4] + '_{:04d}.png'.format(echelle_order_key))
         rv_shifts.append(rv_order_val)
+        rv_fit_chi2.append(chi2_order_fit)
 
     # nothing can be done if no per order RV values were determined for a given exposure/spectrum
     if len(rv_shifts) <= 0:
@@ -222,18 +226,22 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
 
     # analyse obtained RV shifts
     rv_shifts = np.array(rv_shifts)
-    rv_median = np.nanmedian(rv_shifts)
+    rv_fit_chi2 = np.array(rv_fit_chi2)
+    # rv_median = np.nanmedian(rv_shifts)
     # remove gross outliers before computing rv std value
     # rv_shifts[np.abs(rv_shifts - rv_median) > 10.] = np.nan
-    n_fin_rv = np.sum(np.isfinite(rv_shifts))
+    # n_fin_rv = np.sum(np.isfinite(rv_shifts))
+    # determine points with the lowest correlation fit chi2
+    idx_rv_use = rv_fit_chi2 < np.nanpercentile(rv_fit_chi2, 75)  # use 3/4 of the measurements
     # cumpute final RV values
-    rv_median = np.nanmedian(rv_shifts)
-    rv_std = np.nanstd(rv_shifts)
-
+    rv_median = np.nanmedian(rv_shifts[idx_rv_use])
+    rv_std = np.nanstd(rv_shifts[idx_rv_use])
+    print('Median RV computation:', len(idx_rv_use), np.sum(idx_rv_use), np.nanmedian(rv_shifts), np.nanmedian(rv_shifts[idx_rv_use]))
     # print(rv_median, rv_std, n_fin_rv)
 
     if plot_rv and np.isfinite(rv_median):
-        plt.scatter(echelle_orders, rv_shifts)
+        plt.scatter(echelle_orders, rv_shifts, s=5)
+        plt.scatter(np.array(echelle_orders)[~idx_rv_use], rv_shifts[~idx_rv_use], s=10, c='black', marker='x')
         plt.axhline(rv_median, label='Median RV', c='C3', ls='--')
         # plt.ylim(rv_median - 6.,
         #          rv_median + 6.)
@@ -281,9 +289,9 @@ def get_RV_custom_corr_combined(exposure_data, rv_ref_flx, rv_ref_wvl,
 
     # correlate data and get RV value
     try:
-        rv_combined, _ = correlate_spectra(flx_exposure_comb[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
-                                           rv_ref_flx[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
-                                           cont_value=cont_value, plot=False, plot_path=plot_path)
+        rv_combined, _, _ = correlate_spectra(flx_exposure_comb[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
+                                              rv_ref_flx[idx_wvl_use], rv_ref_wvl[idx_wvl_use],
+                                              cont_value=cont_value, plot=False, plot_path=plot_path)
     except Exception as e:
         print('   Combined correlation problem:', e)
         return np.nan, np.nan
