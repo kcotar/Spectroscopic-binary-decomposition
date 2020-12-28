@@ -67,8 +67,10 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
     # correlate the two spectra
     # min_flux = 0.95
     # set near continuum spectral wiggles to the continuum level
-    # ref_flux_sub_log[ref_flux_sub_log > min_flux] = 1.
-    # obs_flux_res_log[obs_flux_res_log > min_flux] = 1.
+    noRV_flux_mask = np.std(ref_flux_sub_log - cont_value)
+    print('No RV flux level:', noRV_flux_mask)
+    ref_flux_sub_log[np.abs(ref_flux_sub_log - cont_value) < noRV_flux_mask] = cont_value
+    # obs_flux_res_log[np.abs(obs_flux_res_log - cont_value) < noRV_flux_mask] = cont_value
     corr_res = correlate(cont_value - ref_flux_sub_log, cont_value - obs_flux_res_log,
                          mode='same', method='fft')
     # normalize correlation by the number of involved wavelength bins
@@ -233,16 +235,21 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
     # n_fin_rv = np.sum(np.isfinite(rv_shifts))
     # determine points with the lowest correlation fit chi2
     idx_rv_use = rv_fit_chi2 < np.nanpercentile(rv_fit_chi2, 75)  # use 3/4 of the measurements
-    # cumpute final RV values
-    rv_median = np.nanmedian(rv_shifts[idx_rv_use])
-    rv_std = np.nanstd(rv_shifts[idx_rv_use])
+    # cumpute initial RV guess
+    rv_median_init = np.nanmedian(rv_shifts[idx_rv_use])
+    # compute final RV using all sensible per order meassuremnts
+    idx_rv_use_2 = np.abs(rv_shifts - rv_median_init) <= 5
+    rv_median = np.nanmedian(rv_shifts[idx_rv_use_2])
+    rv_std = np.nanstd(rv_shifts[idx_rv_use_2])
     print('Median RV computation:', len(idx_rv_use), np.sum(idx_rv_use), np.nanmedian(rv_shifts), np.nanmedian(rv_shifts[idx_rv_use]))
     # print(rv_median, rv_std, n_fin_rv)
 
     if plot_rv and np.isfinite(rv_median):
-        plt.scatter(echelle_orders, rv_shifts, s=5)
-        plt.scatter(np.array(echelle_orders)[~idx_rv_use], rv_shifts[~idx_rv_use], s=10, c='black', marker='x')
-        plt.axhline(rv_median, label='Median RV', c='C3', ls='--')
+        plt.scatter(echelle_orders, rv_shifts, s=12)
+        plt.scatter(np.array(echelle_orders)[~idx_rv_use], rv_shifts[~idx_rv_use], s=10, c='black', marker='x', label='Large chi2 fit')
+        plt.scatter(np.array(echelle_orders)[idx_rv_use_2], rv_shifts[idx_rv_use_2], s=10, c='C1', marker='+', label='Final used')
+        plt.axhline(rv_median_init, label='Init median RV', c='C3', ls='--')
+        plt.axhline(rv_median, label='Final median RV', c='C1', ls='--')
         # plt.ylim(rv_median - 6.,
         #          rv_median + 6.)
         plt.xlim(np.nanmin(echelle_orders) - 25.,
@@ -252,6 +259,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
         plt.xlabel('Echelle order [A]')
         plt.ylabel('Radial velocity [km/s]')
         plt.grid(ls='--', alpha=0.2, color='black')
+        plt.legend()
         plt.tight_layout()
         plt.savefig(plot_path, dpi=250)
         plt.close()

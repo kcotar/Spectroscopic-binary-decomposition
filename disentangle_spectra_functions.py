@@ -149,15 +149,34 @@ def create_new_reference(exposures_all, target_wvl,
     x_ticks_str = [str(xt) for xt in x_ticks]
     # plot combined spectra - all around normalized level of 1
     if plot_combined:
-        fig, ax = plt.subplots(1, 1, figsize=(135, 3.))
+        fig, ax = plt.subplots(2, 1, figsize=(135, 6.), sharex=True)
+
+        # plot individual spectra and final combined spectrum
         for i_ex in range(n_spectra):
-            ax.plot(target_wvl, flx_new[i_ex, :], lw=0.5, alpha=0.33)
-        ax.plot(target_wvl, flx_new_median, c='black', lw=0.8)
-        ax.set(xlim=wvl_range, ylim=np.nanpercentile(flx_new_median, [0.4, 99.6]),
-               xlabel='Wavelength [A]', ylabel='Normalized flux',
-               xticks=x_ticks, xticklabels=x_ticks_str)
-        ax.grid(ls='--', alpha=0.2, color='black')
+            ax[0].plot(target_wvl, flx_new[i_ex, :], lw=0.5, alpha=0.33)
+        ax[0].plot(target_wvl, flx_new_median, c='black', lw=0.8)
+        if w_filt is not None:
+            ax[0].plot(target_wvl, medfilt(flx_new_median, w_filt), c='green', lw=0.5)
+        ax[0].set(xlim=wvl_range, ylim=np.nanpercentile(flx_new_median, [0.4, 99.6]),
+                  # xlabel='Wavelength [A]',
+                  # xticks=x_ticks, xticklabels=x_ticks_str,
+                  ylabel='Normalized flux')
+
+        # plot deviations from the reference spectrum - could be used for RV bad wavelength masking
+        flx_new_std = np.nanstd(flx_new - flx_new_median, axis=0)
+        for i_ex in range(n_spectra):
+            ax[1].plot(target_wvl, flx_new[i_ex, :] - flx_new_median, lw=0.5, alpha=0.33)
+        ax[1].set(xlim=wvl_range, ylim=[-0.04, 0.04],
+                  xlabel='Wavelength [A]', ylabel='Flux diff',
+                  xticks=x_ticks, xticklabels=x_ticks_str)
+        ax[1].plot(target_wvl, flx_new_std, c='black', lw=0.8)
+        ax[1].plot(target_wvl, -flx_new_std, c='black', lw=0.8)
+
+        # final plot visual corrections
+        ax[0].grid(ls='--', alpha=0.2, color='black')
+        ax[1].grid(ls='--', alpha=0.2, color='black')
         fig.tight_layout()
+        fig.subplots_adjust(hspace=0, wspace=0)
         fig.savefig(plot_path, dpi=150)
         plt.close(fig)
 
@@ -226,7 +245,7 @@ def _evaluate_norm_fit(orig, fit, idx, sigma_low, sigma_high):
 def _spectra_normalize(wvl, spectra_orig, 
                        steps=5, sigma_low=2., sigma_high=2.5, window=15, order=5, n_min_perc=5.,
                        func='cheb', fit_on_idx=None, fit_mask=None, sg_filter=False,
-                       return_fit=False, return_idx=False):
+                       return_fit=False, return_idx=False, median_init=True):
     """
 
     :param wvl:
@@ -259,8 +278,10 @@ def _spectra_normalize(wvl, spectra_orig,
         # filter noisy original spectra, so it is easier to determine continuum levels
         if sg_filter:
             spectra = savgol_filter(spectra_orig, window_length=15, polyorder=5)
-        init_fit = np.nanmedian(spectra)
-        idx_fit = _evaluate_norm_fit(spectra, init_fit, idx_fit, sigma_low*2.5, sigma_high*2.5)
+        if median_init:
+            init_fit = np.nanmedian(spectra)
+            idx_fit = _evaluate_norm_fit(spectra, init_fit, idx_fit, sigma_low*2.5, sigma_high*2.5)
+
     data_len = np.sum(idx_fit)
     n_fit_points_prev = np.sum(idx_fit)
     for i_f in range(steps):  # number of sigma clipping steps
@@ -600,7 +621,7 @@ def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  #
     # get new reference spectrum as median of all alligned spectra, per wvl pixel std is also computed and returned 
     ref_flx_new, _ = create_new_reference(star_data, ref_wvl,
                                           # percentile=85.,
-                                          w_filt=13,
+                                          w_filt=7,
                                           use_flx_key=use_flx_key_median, use_rv_key=rv_key,
                                           plot_combined=True, plot_shifted=save_plots,
                                           plot_path=combined_png)

@@ -6,6 +6,7 @@ from disentangle_spectra_functions import plot_combined_spectrum_using_RV, show_
 from copy import deepcopy, copy
 from os import system, path
 from astropy.table import Table
+from socket import gethostname
 
 
 # --------------------------------------------------------------------------------
@@ -13,8 +14,6 @@ from astropy.table import Table
 # --------------------------------------------------------------------------------
 # define initial reference spectra for the determination of radial velocity
 ref_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/rv_ref/'
-ref_file = ['T05500G40M05V000K2SNWNVR20N.fits',
-            'T05500G40M05V000K2SNWNVR20N.fits']
 # read tellurics data and enable discovery of telluric radial velocity
 tellurics_dir = '/shared/mari/cotar/Telluric_data/'
 tellurics_data = np.loadtxt(tellurics_dir + 'telluric_spectra_conv.dat')
@@ -24,10 +23,23 @@ get_tellurics_RV = False
 # --------------------------------------------------------------------------------
 # ---------------------- Stars and orders data setting ---------------------------
 # --------------------------------------------------------------------------------
-# data_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/'
-data_dir = '/shared/mari/travegre/Projects/Asiago_binaries/'
+pc_name = gethostname()
+if pc_name == 'gigli':
+    data_dir = '/data4/travegre/Projects/Asiago_binaries/'  # same as mari but mounted to a different folder
+else:
+    data_dir = '/shared/mari/travegre/Projects/Asiago_binaries/'
+
+# Additional reduced spectra for some stars
+# data_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/
+
 out_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/'
-stars = ['TV_LMi']  #['GZ_Dra', 'TV_LMi', 'V455_Aur']
+stars = ['TV_LMi']  #['GZ_Dra', 'TV_LMi', 'V455_Aur', 'GK_Dra']
+# initial RV reference spectrum for different stars
+ref_file = ['T05500G40M05V000K2SNWNVR20N.fits',
+            'T05500G40M05V000K2SNWNVR20N.fits',
+            'T05500G40M05V000K2SNWNVR20N.fits',
+            'T05500G40M05V000K2SNWNVR20N.fits']
+
 # all possible order centers in the acquired Echelle spectra
 # order_centers = [3790, 3855, 3910, 3990, 4060, 4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580, 6770, 6980, 7210]
 # select telluric orders only - for estimation of wavelength reduction correctness
@@ -36,15 +48,15 @@ if get_tellurics_RV:
     order_centers = [5880, 6040, 6210, 6390, 6580, 6770, 6980]
 else:
     # orders to be loaded from the whole Echelle spectral range
-    order_centers = [4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580]
+    order_centers = [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580]
 obs_metadata = Table.read(data_dir + 'star_data_all.csv')
 
 renorm_orders = True  # should we renormalize orders at the end of an iteration
 new_spectra_only = True  # uses only newer spectra with higher SNR and better quality
 combined_rv_spectrum = False  # False -> produces one RV measurement per Echelle order
 fit_before_removal = False  # do we fit individual components before they are removed from the spectrum
-n_rv_star_iterations = 5  # number of iterations per star
-n_rv_iterations = 2  # number of iterations per component per star iteration
+n_rv_star_iterations = 10  # number of iterations per star
+n_rv_iterations = 3  # number of iterations per component per star iteration
 if get_tellurics_RV:
     n_rv_star_iterations = 1
     n_rv_iterations = 1
@@ -60,7 +72,7 @@ for col in ['RV_s1', 'e_RV_s1', 'RV_s2', 'e_RV_s2', 'VHELIO', 'e_VHELIO']:
 # --------------------------------------------------------------------------------
 # --------------------------- Output data setting --------------------------------
 # --------------------------------------------------------------------------------
-results_dir = out_dir + 'TV_LMi_RV_disentangle_results'
+results_dir = out_dir + 'TV_LMi_RV_disentangle_results_RVmasking'
 if new_spectra_only:
     results_dir += '_newonly'
 else:
