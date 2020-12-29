@@ -68,7 +68,7 @@ def correlate_spectra(obs_flx, obs_wvl, ref_flx, ref_wvl,
     # min_flux = 0.95
     # set near continuum spectral wiggles to the continuum level
     noRV_flux_mask = np.std(ref_flux_sub_log - cont_value)
-    print('No RV flux level:', noRV_flux_mask)
+    # print('No RV flux level:', noRV_flux_mask)
     ref_flux_sub_log[np.abs(ref_flux_sub_log - cont_value) < noRV_flux_mask] = cont_value
     # obs_flux_res_log[np.abs(obs_flux_res_log - cont_value) < noRV_flux_mask] = cont_value
     corr_res = correlate(cont_value - ref_flux_sub_log, cont_value - obs_flux_res_log,

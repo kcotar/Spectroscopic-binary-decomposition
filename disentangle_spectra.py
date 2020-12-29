@@ -2,9 +2,9 @@ import numpy as np
 import joblib
 
 from rv_helper_functions import get_RV_ref_spectrum, plot_rv_perorder_scatter, add_rv_to_metadata
-from disentangle_spectra_functions import plot_combined_spectrum_using_RV, show_spectra_heliocentric, run_complete_RV_and_template_discovery_procedure, get_spectral_data, create_new_reference, renorm_exposure_perorder, remove_ref_from_exposure
+from disentangle_spectra_functions import plot_combined_spectrum_using_RV, show_spectra_heliocentric, run_complete_RV_and_template_discovery_procedure, get_spectral_data, create_new_reference, renorm_exposure_perorder, remove_ref_from_exposure, _go_to_dir
 from copy import deepcopy, copy
-from os import system, path
+from os import system, path, chdir
 from astropy.table import Table
 from socket import gethostname
 
@@ -25,15 +25,18 @@ get_tellurics_RV = False
 # --------------------------------------------------------------------------------
 pc_name = gethostname()
 if pc_name == 'gigli':
-    data_dir = '/data4/travegre/Projects/Asiago_binaries/'  # same as mari but mounted to a different folder
+    # data_dir = '/data4/travegre/Projects/Asiago_binaries/'  # same as mari but mounted to a different folder
+    data_dir = '/media/hdd/home2/klemen/Spectroscopic-binary-decomposition/Binaries_spectra/'
 else:
-    data_dir = '/shared/mari/travegre/Projects/Asiago_binaries/'
+    data_dir = '/shared/mari/klemen/Projects/Asiago_binaries/'
 
 # Additional reduced spectra for some stars
 # data_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/
 
-out_dir = '/shared/data-camelot/cotar/Asiago_binaries_programme/'
-stars = ['TV_LMi']  #['GZ_Dra', 'TV_LMi', 'V455_Aur', 'GK_Dra']
+out_dir = '/media/hdd/home2/klemen/Spectroscopic-binary-decomposition/Binaries_RV/'
+_go_to_dir(out_dir)
+
+stars = ['TV_LMi', 'GZ_Dra', 'V455_Aur', 'GK_Dra']
 # initial RV reference spectrum for different stars
 ref_file = ['T05500G40M05V000K2SNWNVR20N.fits',
             'T05500G40M05V000K2SNWNVR20N.fits',
@@ -55,8 +58,8 @@ renorm_orders = True  # should we renormalize orders at the end of an iteration
 new_spectra_only = True  # uses only newer spectra with higher SNR and better quality
 combined_rv_spectrum = False  # False -> produces one RV measurement per Echelle order
 fit_before_removal = False  # do we fit individual components before they are removed from the spectrum
-n_rv_star_iterations = 10  # number of iterations per star
-n_rv_iterations = 3  # number of iterations per component per star iteration
+n_rv_star_iterations = 3  # number of iterations per star
+n_rv_iterations = 2  # number of iterations per component per star iteration
 if get_tellurics_RV:
     n_rv_star_iterations = 1
     n_rv_iterations = 1
@@ -72,29 +75,33 @@ for col in ['RV_s1', 'e_RV_s1', 'RV_s2', 'e_RV_s2', 'VHELIO', 'e_VHELIO']:
 # --------------------------------------------------------------------------------
 # --------------------------- Output data setting --------------------------------
 # --------------------------------------------------------------------------------
-results_dir = out_dir + 'TV_LMi_RV_disentangle_results_RVmasking'
+results_dir_root = out_dir + 'RV_disentangle_results_RVmasking'
 if new_spectra_only:
-    results_dir += '_newonly'
+    results_dir_root += '_newonly'
 else:
-    results_dir += '_all'
+    results_dir_root += '_all'
 if renorm_orders:
-    results_dir += '_renorm'
+    results_dir_root += '_renorm'
 if combined_rv_spectrum:
-    results_dir += '_combRVspec'
+    results_dir_root += '_combRVspec'
 if not fit_before_removal:
-    results_dir += '_noremovalfit'
+    results_dir_root += '_noremovalfit'
 if get_tellurics_RV:
-    results_dir += '_tellurics'
-results_dir += '/'
-system('mkdir ' + results_dir)
+    results_dir_root += '_tellurics'
+results_dir_root += '/'
+_go_to_dir(results_dir_root)
 
 # --------------------------------------------------------------------------------
 # ------------------------- Run for every given star -----------------------------
 # --------------------------------------------------------------------------------
-fits_final = results_dir + 'final_results.fits'
+fits_final = results_dir_root + 'final_results.fits'
 for i_str, star_id in enumerate(stars):
     print('Star:', star_id)
     # load all requested spectral data for the selected star
+    results_dir = results_dir_root + star_id + '/'
+    _go_to_dir(results_dir)
+    system('rm -R *')
+
     pkl_input_data = results_dir + star_id + '_input_data.pkl'
     if path.isfile(pkl_input_data):
         print('Reading exported input data: ' + pkl_input_data)
@@ -289,7 +296,14 @@ for i_str, star_id in enumerate(stars):
         #                             plot_combined=False, plot_shifted=True,
         #                             plot_path='spectra_comb_interesting_gz_dra.png')
 
-obs_metadata.write(fits_final, overwrite=True)
+    # export results for a given star
+    star_obs_metadata = obs_metadata[obs_metadata['star'] == star_id.replace('_', ' ').lower()]
+    star_obs_metadata = star_obs_metadata[np.isfinite(star_obs_metadata['RV_s1'])]
+    np.savetxt(f'RV_primary_{star_id}.txt', star_obs_metadata['JD', 'RV_s1', 'e_RV_s1'].to_pandas().values, fmt=['%.8f', '%.5f', '%.5f'])
+    np.savetxt(f'RV_secondary_{star_id}.txt', star_obs_metadata['JD', 'RV_s2', 'e_RV_s2'].to_pandas().values, fmt=['%.8f', '%.5f', '%.5f'])
+    chdir('..')
+    obs_metadata.write(fits_final, overwrite=True)
+    
 
 '''
         if dump_input_data:

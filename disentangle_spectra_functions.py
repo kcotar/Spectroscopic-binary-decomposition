@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from os import scandir, path  # scandir introduced in py3.x
+from os import system, chdir
 from copy import deepcopy
 from scipy.interpolate import splrep, splev
 from scipy.signal import savgol_filter, medfilt
@@ -13,6 +14,14 @@ from rv_helper_functions import get_RV_ref_spectrum, get_RV_custom_corr_perorder
 
 norm_suffix = '_normalised.txt'
 sigma_norm_suffix = '_sigma_normalised.txt'
+
+
+def _go_to_dir(path):
+    try:
+        system('mkdir ' + path)
+    except:
+        pass
+    chdir(path)
 
 
 def _get_reduced_exposures(in_dir):
@@ -302,7 +311,7 @@ def _spectra_normalize(wvl, spectra_orig,
             #     idx_fit = _evaluate_norm_fit(spectra, cont_fit, idx_fit, sigma_low, sigma_high)
             spline_coef = splrep(wvl[idx_fit], spectra[idx_fit], k=order, s=window)
             cont_fit = splev(wvl, spline_coef)
-            print(i_f, 'points:', n_fit_points_prev, 'knots:', len(spline_coef[0]))
+            # print(i_f, 'points:', n_fit_points_prev, 'knots:', len(spline_coef[0]))
         idx_fit = _evaluate_norm_fit(spectra, cont_fit, idx_fit, sigma_low, sigma_high)
         n_fit_points = np.sum(idx_fit)
         if 100.*n_fit_points/data_len < n_min_perc:
@@ -355,9 +364,10 @@ def renorm_exposure_perorder(exposure_data, ref_flx, ref_wvl,
         # perform renormalization using the supplied reference spectrum
         # get renormalization curve by comparing reference and observed spectrum
         try:
-            ref_flx_norm_curve = _spectra_normalize(order_wvl, order_flx / ref_flx_order,
+            wvl_len = len(order_wvl)
+            ref_flx_norm_curve = _spectra_normalize(np.arange(wvl_len), order_flx / ref_flx_order,
                                                     steps=10, sigma_low=2.5, sigma_high=2.5, n_min_perc=8.,
-                                                    order=4, func='poly', return_fit=True)
+                                                    order=4, func='cheb', return_fit=True)
             # renorm order
             exposure_data[echelle_order_key][output_flx_key] = order_flx / ref_flx_norm_curve
 
