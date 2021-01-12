@@ -1,7 +1,12 @@
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from os import scandir, path  # scandir introduced in py3.x
+try:
+  from os import scandir, path  # scandir introduced in py3.x
+except:
+    pass
 from os import system, chdir
 from copy import deepcopy
 from scipy.interpolate import splrep, splev
@@ -58,7 +63,9 @@ def get_orderdata_by_wavelength(spec_dir, orders, in_wvl):
     """
     for order in orders:
         flux_data = np.loadtxt(spec_dir + order + norm_suffix)
-        sigma_data = np.loadtxt(spec_dir + order + norm_suffix)
+        #sigma_data = np.loadtxt(spec_dir + order + sigma_norm_suffix)
+        sigma_data = deepcopy(flux_data)
+        sigma_data[:, 1] = 0.
         if np.nanmin(flux_data[:, 0]) <= in_wvl <= np.nanmax(flux_data[:, 0]):
             return flux_data[:, 0], flux_data[:, 1], sigma_data[:, 1]
     return None, None, None
@@ -111,8 +118,15 @@ def get_spectral_data(star, wvl_orders, in_dir,
                     star_data_all[exposure][get_wvl_order] = {
                         'wvl': order_data[0],
                         'flx': order_data[1],
-                        'sig': order_data[2]
+                        'sig': order_data[2],
+                        'flx1': np.ones_like(order_data[1]),
+                        'flx2': np.zeros_like(order_data[1]),
                     }
+
+            # add RV flags, which determines which of the orders can be used for RV estimation
+            #star_data_all['RV_s1_use'] =
+            #star_data_all['RV_s2_use'] =
+
     return star_data_all
 
 
@@ -176,8 +190,8 @@ def create_new_reference(exposures_all, target_wvl,
         for i_ex in range(n_spectra):
             ax[1].plot(target_wvl, flx_new[i_ex, :] - flx_new_median, lw=0.5, alpha=0.33)
         ax[1].set(xlim=wvl_range, ylim=[-0.04, 0.04],
-                  xlabel='Wavelength [A]', ylabel='Flux diff',
-                  xticks=x_ticks, xticklabels=x_ticks_str)
+                  # xticks=x_ticks, xticklabels=x_ticks_str,
+                  xlabel='Wavelength [A]', ylabel='Flux diff')
         ax[1].plot(target_wvl, flx_new_std, c='black', lw=0.8)
         ax[1].plot(target_wvl, -flx_new_std, c='black', lw=0.8)
 
@@ -210,8 +224,8 @@ def create_new_reference(exposures_all, target_wvl,
         ax.plot(target_wvl, flx_new_median, c='black', lw=0.8)
         ax.set(xlim=wvl_range, 
                ylim=y_range + np.array([0, flx_offset * n_spectra]),
-               xlabel='Wavelength [A]', ylabel='Normalized and shifted flux',
-               xticks=x_ticks, xticklabels=x_ticks_str)
+               # xticks=x_ticks, xticklabels=x_ticks_str,
+               xlabel='Wavelength [A]', ylabel='Normalized and shifted flux')
         ax.grid(ls='--', alpha=0.2, color='black')
         fig.tight_layout()
         fig.savefig(plot_path[:-4] + '_shifted.png', dpi=150)
@@ -348,6 +362,9 @@ def renorm_exposure_perorder(exposure_data, ref_flx, ref_wvl,
     """
     print('   Input normalization flux key is', input_flx_key, 'and RV key is', use_rv_key)
     rv_val_star = exposure_data[use_rv_key]
+    if not np.isfinite(rv_val_star):
+        rv_val_star = 0
+
     # shift reference spectrum from stars' rest to barycentric/observed reference frame - use reversed RV value
     ref_wvl_shifted = correct_wvl_for_rv(ref_wvl, -1.*rv_val_star)
 
@@ -373,12 +390,13 @@ def renorm_exposure_perorder(exposure_data, ref_flx, ref_wvl,
 
             if plot:
                 fig, ax = plt.subplots(2, 1, sharex=True, figsize=(15, 5))
-                ax[0].plot(order_wvl, order_flx, lw=0.5)
-                ax[0].plot(order_wvl, ref_flx_order, lw=0.5)
-                ax[0].plot(order_wvl, order_flx / ref_flx_norm_curve, lw=0.5)
+                ax[0].plot(order_wvl, order_flx, lw=0.5, label='Original')
+                ax[0].plot(order_wvl, ref_flx_order, lw=0.5, label='Reference')
+                ax[0].plot(order_wvl, order_flx / ref_flx_norm_curve, lw=0.5, label='Renormed')
                 ax[1].plot(order_wvl, order_flx / ref_flx_order, lw=0.5)
                 ax[1].plot(order_wvl, ref_flx_norm_curve, lw=0.5)
                 ax[1].set(xlim=[order_wvl[0]-0.2, order_wvl[-1]+0.2])
+                ax[0].legend()
                 fig.tight_layout()
                 fig.subplots_adjust(hspace=0, wspace=0)
                 if plot_path is None:
@@ -437,6 +455,12 @@ def remove_ref_from_exposure(exposure_data, ref_flx, ref_wvl,
         rv_val_star = 0.
     else:
         rv_val_star = exposure_data[use_rv_key]
+
+    if not np.isfinite(rv_val_star):
+        if verbose:
+            print('   WARNING: Component removal not possible as RV was not estimated.')
+        return exposure_data
+
     # shift reference spectrum from stars' rest to barycentric/observed reference frame - use reversed RV value
     ref_wvl_shifted = correct_wvl_for_rv(ref_wvl, -1. * rv_val_star)
 
@@ -704,8 +728,16 @@ def plot_combined_spectrum_using_RV(exposure_data,
     flx_orig_comb = _combine_orders(exposure_data, ref_wvl,
                                     use_flx_key=input_flx_key, use_rv_key=None)
     # shift reference spectra into observed stars frame
-    use_wvl_s1 = correct_wvl_for_rv(ref_wvl, -1. * exposure_data[prim_rv])
-    use_wvl_s2 = correct_wvl_for_rv(ref_wvl, -1. * exposure_data[sec_rv])
+    rv_s1 = exposure_data[prim_rv]
+    rv_s2 = exposure_data[sec_rv]
+
+    if not np.isfinite(rv_s1):
+        rv_s1 = 0
+    if not np.isfinite(rv_s2):
+        rv_s2 = 0
+
+    use_wvl_s1 = correct_wvl_for_rv(ref_wvl, -1. * rv_s1)
+    use_wvl_s2 = correct_wvl_for_rv(ref_wvl, -1. * rv_s2)
     # resample reference spectra to match with observed wavelength spacing
     use_flx_s1 = _spectra_resample(ref_flx_s1, use_wvl_s1, ref_wvl)
     use_flx_s2 = _spectra_resample(ref_flx_s2, use_wvl_s2, ref_wvl)
@@ -730,10 +762,11 @@ def plot_combined_spectrum_using_RV(exposure_data,
         ax[1].plot(ref_wvl, flx_res, c='black', lw=0.7, alpha=1)
         # make nicer looking plot with labels etc
         ax[0].set(ylim=[y_range[0], 1.03],
+                  # xticks=x_ticks, xticklabels=x_ticks_str,
                   ylabel='Normalized flux')
         ax[1].set(xlim=wvl_range, ylim=y_range2,
-                  xlabel='Wavelength [A]', ylabel='Residual',
-                  xticks=x_ticks, xticklabels=x_ticks_str)
+                  # xticks=x_ticks, xticklabels=x_ticks_str,
+                  xlabel='Wavelength [A]', ylabel='Residual')
         ax[0].grid(ls='--', alpha=0.2, color='black')
         ax[1].grid(ls='--', alpha=0.2, color='black')
         ax[0].legend()

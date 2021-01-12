@@ -1,5 +1,7 @@
 import numpy as np
 import astropy.constants as const
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from astropy.io import fits
@@ -170,7 +172,7 @@ def correlate_order(obs_flx, obs_wvl,
     idx_ref_use = np.logical_and(ref_wvl >= wvl_beg, ref_wvl <= wvl_end)
     if np.sum(idx_ref_use) < 20:
         print('    Short spectral overlap, skipping order ({:.0f} - {:.0f}).'.format(wvl_beg, wvl_end))
-        return np.nan, np.nanmedian(ref_wvl[idx_ref_use])
+        return np.nan, np.nanmedian(ref_wvl[idx_ref_use]), np.nan
 
     ref_wvl_use = deepcopy(ref_wvl[idx_ref_use])
     ref_flx_use = deepcopy(ref_flx[idx_ref_use])
@@ -241,7 +243,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
     idx_rv_use_2 = np.abs(rv_shifts - rv_median_init) <= 5
     rv_median = np.nanmedian(rv_shifts[idx_rv_use_2])
     rv_std = np.nanstd(rv_shifts[idx_rv_use_2])
-    print('Median RV computation:', len(idx_rv_use), np.sum(idx_rv_use), np.nanmedian(rv_shifts), np.nanmedian(rv_shifts[idx_rv_use]))
+    print('   Median RV computation:', len(idx_rv_use), np.sum(idx_rv_use), np.nanmedian(rv_shifts), np.nanmedian(rv_shifts[idx_rv_use]))
     # print(rv_median, rv_std, n_fin_rv)
 
     if plot_rv and np.isfinite(rv_median):

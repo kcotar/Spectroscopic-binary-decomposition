@@ -18,4 +18,11 @@
 # Temporary
 .~lock*
 
+# Folders
+pyraf
+uparm
+Binaries_RV
+Binaries_spectra
+
+# Log files
 *.log

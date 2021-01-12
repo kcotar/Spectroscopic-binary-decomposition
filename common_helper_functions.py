@@ -98,10 +98,14 @@ def _combine_orders(exposure_data, target_wvl,
             return exposure_new_flx
         rv_val = exposure_data[use_rv_key]
 
-    # print('combine orders:', use_flx_key, use_rv_key, rv_val)
-    echelle_orders = _valid_orders_from_keys(exposure_data.keys()) 
+        if not np.isfinite(rv_val):
+            return exposure_new_flx
 
-    for echelle_order_key in echelle_orders:
+    # print('combine orders:', use_flx_key, use_rv_key, rv_val)
+    echelle_orders = _valid_orders_from_keys(exposure_data.keys())
+
+    exposure_new_orders = np.full((len(echelle_orders), len(target_wvl)), np.nan)
+    for i_o, echelle_order_key in enumerate(echelle_orders):
         order_orig_flx = exposure_data[echelle_order_key][use_flx_key]
         order_orig_wvl = exposure_data[echelle_order_key]['wvl']
         # apply determined radial velocity to the wavelengths
@@ -110,7 +114,9 @@ def _combine_orders(exposure_data, target_wvl,
         order_new_flx = _spectra_resample(order_orig_flx, order_new_wvl, target_wvl)
         # insert interpolated values into the final spectrum array
         idx_flx_order = np.isfinite(order_new_flx)
-        exposure_new_flx[idx_flx_order] = order_new_flx[idx_flx_order]
+        exposure_new_orders[i_o, idx_flx_order] = order_new_flx[idx_flx_order]
+
+    exposure_new_flx = np.nanmedian(exposure_new_orders, axis=0)
 
     # return new filled array that spatially matches reference spectrum
     return exposure_new_flx
