@@ -637,7 +637,7 @@ def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  #
             rv_all, rv_med, rv_std = get_RV_custom_corr_perorder(deepcopy(star_data[exp_id]), ref_flx, ref_wvl,
                                                                  cont_value=cont_value,
                                                                  rv_ref_val=None, use_flx_key=use_flx_key,
-                                                                 plot_rv=True, plot_path=rv_png)
+                                                                 plot_rv=False, plot_path=rv_png)
             if verbose:
                 print('   Median RV value:', rv_med, rv_std)
             star_data[exp_id][rv_key + '_orders'] = rv_all
@@ -655,7 +655,7 @@ def run_complete_RV_and_template_discovery_procedure(star_data, obs_metadata,  #
     # get new reference spectrum as median of all alligned spectra, per wvl pixel std is also computed and returned 
     ref_flx_new, _ = create_new_reference(star_data, ref_wvl,
                                           # percentile=85.,
-                                          w_filt=7,
+                                          w_filt=3,
                                           use_flx_key=use_flx_key_median, use_rv_key=rv_key,
                                           plot_combined=True, plot_shifted=save_plots,
                                           plot_path=combined_png)

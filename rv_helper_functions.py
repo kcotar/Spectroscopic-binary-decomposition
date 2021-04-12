@@ -220,7 +220,7 @@ def get_RV_custom_corr_perorder(exposure_data, rv_ref_flx, rv_ref_wvl,
         rv_order_val, _, chi2_order_fit = correlate_order(order_flx, order_wvl,  # observed spectrum data
                                                           rv_ref_flx, rv_ref_wvl,  # reference spectrum data
                                                           cont_value=cont_value,
-                                                          plot=False, plot_path=plot_path[:-4] + '_{:04d}.png'.format(echelle_order_key))
+                                                          plot=plot_rv, plot_path=plot_path[:-4] + '_{:04d}.png'.format(echelle_order_key))
         rv_shifts.append(rv_order_val)
         rv_fit_chi2.append(chi2_order_fit)
 

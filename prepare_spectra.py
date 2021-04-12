@@ -49,7 +49,7 @@ obs_metadata = obs_metadata[obs_metadata['odkdaj'] == 'nova']
 _go_to_dir('Binaries_spectra')
 copyfile(data_dir + 'star_data_all.csv', 'star_data_all.csv')
 
-stars = ['TV_LMi', 'GZ_Dra', 'V455_Aur', 'GK_Dra', 'DT_Cam', 'V394_Vul', 'CI_CVn', 'V1898_Cyg', 'V417_Aur', 'EQ_Boo', 'V994_Her', 'CN_Lyn', 'DV_Cam'][0:6]
+stars = ['TV_LMi', 'GZ_Dra', 'V455_Aur', 'GK_Dra', 'DT_Cam', 'V394_Vul', 'CI_CVn', 'V1898_Cyg', 'V417_Aur', 'EQ_Boo', 'V994_Her', 'CN_Lyn', 'DV_Cam'][6:15]
 
 for star in stars:
 
@@ -127,7 +127,7 @@ for star in stars:
 				continue
 
 			# crop order data to remove noisy part of the echelle order
-			n_wvl_rem1 = 100
+			n_wvl_rem1 = 50
 			order_data = order_data[n_wvl_rem1:-n_wvl_rem1, :]
 			n_data = order_data.shape[0]
 
@@ -140,7 +140,7 @@ for star in stars:
 													order=3, func='cheb', return_fit=True, median_init=True)
 
 			# extra wvl border removal
-			n_wvl_rem2 = 50
+			n_wvl_rem2 = 100
 			order_data = order_data[n_wvl_rem2:-n_wvl_rem2, :]
 			ref_flx_norm_curve1 = ref_flx_norm_curve1[n_wvl_rem2:-n_wvl_rem2]
 			ref_flx_norm_curve2 = ref_flx_norm_curve2[n_wvl_rem2:-n_wvl_rem2]

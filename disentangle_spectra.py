@@ -36,48 +36,84 @@ else:
 out_dir = '/media/hdd/home2/klemen/Spectroscopic-binary-decomposition/Binaries_RV/'
 _go_to_dir(out_dir)
 
-stars = ['TV_LMi', 'GZ_Dra', 'V455_Aur', 'GK_Dra', 'DT_Cam', 'V394_Vul', 'CI_CVn', 'V1898_Cyg', 'V417_Aur', 'EQ_Boo', 'V994_Her', 'CN_Lyn', 'DV_Cam']#[6:15]
-stars = ['CI_CVn']
+stars = ['TV_LMi', 'GZ_Dra', 'V455_Aur', 'GK_Dra', 'DT_Cam', 'V394_Vul', 'CI_CVn', 'V1898_Cyg', 'V417_Aur', 'EQ_Boo', 'V994_Her', 'CN_Lyn', 'DV_Cam'][0:15]
+
 # initial RV reference spectrum for different stars
+'''
 ref_file = {
-            'TV_LMi': 'T05500G40M05V000K2SNWNVR20N.fits',
-            'GZ_Dra': 'T05500G40M05V000K2SNWNVR20N.fits',
+            'TV_LMi':   'T05500G40M05V000K2SNWNVR20N.fits',
+            'GZ_Dra':   'T07500G40M05V075K2SNWNVR20N.fits',
+            'V455_Aur': 'T07000G40M05V050K2SNWNVR20N.fits',
+            'GK_Dra':   'T05500G40M05V000K2SNWNVR20N.fits',
+            'DT_Cam':   'T09000G40M05V150K2SNWNVR20N.fits',
+            'V394_Vul': 'T08750G40M05V150K2SNWNVR20N.fits',
+            'CI_CVn':   'T08750G40M05V150K2SNWNVR20N.fits',
+            'V1898_Cyg':'T15000G40M05V200K2SODNVR20N.fits',
+            'V417_Aur': 'T09000G40M05V150K2SNWNVR20N.fits',
+            'EQ_Boo':   'T05500G40M05V000K2SNWNVR20N.fits',
+            'V994_Her': 'T10000G40M05V200K2SODNVR20N.fits',
+            'CN_Lyn':   'T06500G40M05V000K2SNWNVR20N.fits',
+            'DV_Cam':   'T15000G40M05V200K2SODNVR20N.fits'
+            }
+'''
+ref_file = {
+            'TV_LMi':   'T05500G40M05V000K2SNWNVR20N.fits',
+            'GZ_Dra':   'T05500G40M05V000K2SNWNVR20N.fits',
             'V455_Aur': 'T05500G40M05V000K2SNWNVR20N.fits',
-            'GK_Dra': 'T05500G40M05V000K2SNWNVR20N.fits',
-            'DT_Cam':'T05500G40M05V000K2SNWNVR20N.fits',
-            'V394_Vul':'T05500G40M05V000K2SNWNVR20N.fits',
-            'CI_CVn': 'T08500G40P00V000K2SNWNVR20N.fits',
+            'GK_Dra':   'T05500G40M05V000K2SNWNVR20N.fits',
+            'DT_Cam':   'T05500G40M05V000K2SNWNVR20N.fits',
+            'V394_Vul': 'T05500G40M05V000K2SNWNVR20N.fits',
+            'CI_CVn':   'T05500G40M05V000K2SNWNVR20N.fits',
             'V1898_Cyg':'T05500G40M05V000K2SNWNVR20N.fits',
-            'V417_Aur':'T05500G40M05V000K2SNWNVR20N.fits',
-            'EQ_Boo':'T05500G40M05V000K2SNWNVR20N.fits',
-            'V994_Her':'T05500G40M05V000K2SNWNVR20N.fits',
-            'CN_Lyn':'T05500G40M05V000K2SNWNVR20N.fits',
-            'DV_Cam':'T05500G40M05V000K2SNWNVR20N.fits'
+            'V417_Aur': 'T05500G40M05V000K2SNWNVR20N.fits',
+            'EQ_Boo':   'T05500G40M05V000K2SNWNVR20N.fits',
+            'V994_Her': 'T05500G40M05V000K2SNWNVR20N.fits',
+            'CN_Lyn':   'T05500G40M05V000K2SNWNVR20N.fits',
+            'DV_Cam':   'T05500G40M05V000K2SNWNVR20N.fits'
             }
 
 # all possible order centers in the acquired Echelle spectra
-# order_centers = [3790, 3855, 3910, 3990, 4060, 4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580, 6770, 6980, 7210]
+order_centers_all = [3790, 3855, 3910, 3990, 4060, 4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580, 6770, 6980, 7210]
+
 # select telluric orders only - for estimation of wavelength reduction correctness
 if get_tellurics_RV:
     # select orders with a telluric absorption signature
     order_centers = [5880, 6040, 6210, 6390, 6580, 6770, 6980]
 else:
     # orders to be loaded from the whole Echelle spectral range
+    
     order_centers = {
-                     'TV_LMi': [4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'GZ_Dra': [4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'V455_Aur':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'GK_Dra': [4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'DT_Cam':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'V394_Vul':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'CI_CVn':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'V1898_Cyg':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'V417_Aur':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'EQ_Boo':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'V994_Her':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'CN_Lyn':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
-                     'DV_Cam':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580]
+                     'TV_LMi':   [4980, 5100, 5210, 5340, 5460, 5610, 5880, 6040, 6210, 6390, 6580],
+                     'GZ_Dra':   [4290, 4380, 4460, 4560, 4640, 4750, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390],
+                     'V455_Aur': [4290, 4380, 4460, 4560, 4640, 4750, 4980, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390],
+                     'GK_Dra':   [4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390],
+                     'DT_Cam':   [4290, 4380, 4460, 4560, 4640, 4750, 4980, 5210, 5340, 5460, 5610, 5730, 6040, 6210, 6390, 6580],
+                     'V394_Vul': [4220, 4290, 4380, 4460, 4560, 4640, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 6210, 6390],
+                     'CI_CVn':   [4220, 4290, 4380, 4460, 4560, 4640, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'V1898_Cyg':[4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 6040, 6210, 6390, 6580],
+                     'V417_Aur': [4140, 4220, 4380, 4460, 4560, 4640, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 6040, 6210, 6390],
+                     'EQ_Boo':   [4220, 4290, 4380, 4460, 4560, 4640, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210],
+                     'V994_Her': [4460, 4560, 4640, 4750, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'CN_Lyn':   [4140, 4220, 4290, 4380, 4460, 4560, 4640, 4750, 4856, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 6040],
+                     'DV_Cam':   [4220, 4460, 4560, 4640, 4980, 5100, 5210, 5340, 5460, 5610, 5730, 5880, 6040, 6390]
                     }
+    '''
+    order_centers = {
+                     'TV_LMi':   [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'GZ_Dra':   [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'V455_Aur': [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'GK_Dra':   [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'DT_Cam':   [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'V394_Vul': [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'CI_CVn':   [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'V1898_Cyg':[5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'V417_Aur': [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'EQ_Boo':   [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'V994_Her': [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'CN_Lyn':   [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580],
+                     'DV_Cam':   [5210, 5340, 5460, 5610, 5730, 5880, 6040, 6210, 6390, 6580]
+                    }
+    '''
 obs_metadata = Table.read(data_dir + 'star_data_all.csv')
 
 renorm_orders = True  # should we renormalize orders at the end of an iteration
@@ -93,6 +129,7 @@ if get_tellurics_RV:
 dump_input_data = True
 additional_verbose = True
 save_all_plots = True
+
 # add additional columns to the metadata
 for col in ['RV_s1', 'e_RV_s1', 'RV_s2', 'e_RV_s2', 'VHELIO', 'e_VHELIO']:
     obs_metadata[col] = np.nan
@@ -129,15 +166,20 @@ for i_str, star_id in enumerate(stars):
     system('rm -R *')
 
     pkl_input_data = results_dir + star_id + '_input_data.pkl'
-    if path.isfile(pkl_input_data):
+    pkl_input_data_all = results_dir + star_id + '_input_data_all.pkl'
+    if path.isfile(pkl_input_data) and path.isfile(pkl_input_data_all):
         print('Reading exported input data: ' + pkl_input_data)
         star_data = joblib.load(pkl_input_data)
+        star_data_all = joblib.load(pkl_input_data_all)
     else:
         star_data = get_spectral_data(star_id, order_centers[star_id], data_dir,
                                       new_only=new_spectra_only)
+        star_data_all = get_spectral_data(star_id, order_centers_all, data_dir,
+                                          new_only=new_spectra_only)
         # export all input data
         if dump_input_data:
             joblib.dump(star_data, pkl_input_data)
+            joblib.dump(star_data_all, pkl_input_data_all)
 
     # add vhelio values to the observations metadata
     obs_metadata = add_rv_to_metadata(star_data, star_id,
@@ -163,6 +205,10 @@ for i_str, star_id in enumerate(stars):
     ref_flx_s1 = np.full_like(ref_flx_orig, fill_value=1.)  # primary
     ref_flx_s2 = np.full_like(ref_flx_orig, fill_value=0.)  # secondary
     ref_flx_s3 = np.full_like(ref_flx_orig, fill_value=0.)  # tertiary
+    # initial primary, secondary and tertiary reference flux for the whole Echelle range
+    ref_flx_s1_all = np.full_like(ref_flx_orig, fill_value=1.)  # primary
+    ref_flx_s2_all = np.full_like(ref_flx_orig, fill_value=0.)  # secondary
+    ref_flx_s3_all = np.full_like(ref_flx_orig, fill_value=0.)  # tertiary
 
     # --------------------------------------------------------------------------------
     # --------------------------------------------------------------------------------
@@ -316,24 +362,76 @@ for i_str, star_id in enumerate(stars):
                                                 prim_rv='RV_s1', sec_rv='RV_s2', input_flx_key=input_flx_key,
                                                 plot=True, plot_path=components_png)
 
-        # # TEST purpose only
-        # star_data_interesting = {}
-        # for id_e in ['EC60919.ec.vh','EC59315.ec.vh','EC59317.ec.vh','EC59319.ec.vh']:
-        #     star_data_interesting[id_e] = star_data[id_e]
-        # _, _ = create_new_reference(star_data_interesting, ref_wvl,
-        #                             w_filt=13,
-        #                             use_flx_key='flx_renorm', use_rv_key='RV_s1',
-        #                             plot_combined=False, plot_shifted=True,
-        #                             plot_path='spectra_comb_interesting_gz_dra.png')
+        # --------------------------------------------------------------------------------
+        # ------------ Create combined spectrum of a primary star and secondary over the whole wavelength range
+        # --------------------------------------------------------------------------------
+        print(' Preparing and exporting spectra over the whole spectral range.')
+        # determine which reference spectrum will be used - depending on star run and iteration run number
+        input_flx_key_all = 'flx'
+        if i_it_star > 0:
+            input_flx_key_all += '_renorm'
 
-    # export results for a given star
+        # firstly copy over RV results from analysed orders to complete spectral database
+        for exp_id in star_data_all.keys():
+            for c_val in ['RV_s1', 'e_RV_s1', 'RV_s2', 'e_RV_s2']:
+                star_data_all[exp_id][c_val] = star_data[exp_id][c_val]
+
+        # remove secondary spectrum from observed spectra to obtain individual primary spectra
+        for exp_id in star_data_all.keys():
+            star_exposure_new = remove_ref_from_exposure(deepcopy(star_data_all[exp_id]),
+                                                         ref_flx_s2_all, ref_wvl,
+                                                         primary=True,
+                                                         use_rv_key='RV_s2',
+                                                         input_flx_key=input_flx_key_all,
+                                                         output_flx_key='flx1',
+                                                         verbose=additional_verbose)
+            star_data_all[exp_id] = star_exposure_new
+
+        # create primary spectrum
+        ref_flx_s1_all, _ = create_new_reference(star_data_all, ref_wvl,
+                                                 use_flx_key='flx1', use_rv_key='RV_s1')
+
+        # remove primary spectrum from observed spectra to obtain individual secondary spectra
+        for exp_id in star_data_all.keys():
+            star_exposure_new = remove_ref_from_exposure(deepcopy(star_data_all[exp_id]),
+                                                         ref_flx_s1_all, ref_wvl,
+                                                         primary=False,
+                                                         use_rv_key='RV_s1',
+                                                         input_flx_key=input_flx_key_all,
+                                                         output_flx_key='flx2',
+                                                         verbose=additional_verbose)
+            star_data_all[exp_id] = star_exposure_new
+
+        # create secondary spectrum
+        ref_flx_s2_all, _ = create_new_reference(star_data_all, ref_wvl,
+                                                 use_flx_key='flx2', use_rv_key='RV_s2')
+
+        # renorm original spectra using median primary spectrum
+        for exp_id in star_data_all.keys():
+            star_exposure_new = renorm_exposure_perorder(deepcopy(star_data_all[exp_id]), copy(ref_flx_s1_all), ref_wvl,
+                                                         use_rv_key='RV_s1',
+                                                         input_flx_key='flx',
+                                                         output_flx_key='flx_renorm')
+            star_data_all[exp_id] = star_exposure_new
+
+        # export primary and secondary spectrum as csv
+        primary_txt = open(f'spec_primary_{star_id}.txt', 'w')
+        secondary_txt = open(f'spec_secondary_{star_id}.txt', 'w')
+        for i_w, r_w in enumerate(ref_wvl):
+            primary_txt.write('{:.4f} {:.3f}\n'.format(ref_flx_s1_all[i_w], r_w))
+            secondary_txt.write('{:.5f} {:.3f}\n'.format(ref_flx_s2_all[i_w], r_w))
+        primary_txt.close()
+        secondary_txt.close()
+
+    # --------------------------------------------------------------------------------
+    # ------------ Export results for a given star -----------------------------------
+    # --------------------------------------------------------------------------------
     star_obs_metadata = obs_metadata[obs_metadata['star'] == star_id.replace('_', ' ').lower()]
     star_obs_metadata = star_obs_metadata[np.isfinite(star_obs_metadata['RV_s1'])]
     np.savetxt(f'RV_primary_{star_id}.txt', star_obs_metadata['JD', 'RV_s1', 'e_RV_s1'].to_pandas().values, fmt=['%.8f', '%.5f', '%.5f'])
     np.savetxt(f'RV_secondary_{star_id}.txt', star_obs_metadata['JD', 'RV_s2', 'e_RV_s2'].to_pandas().values, fmt=['%.8f', '%.5f', '%.5f'])
     chdir('..')
     obs_metadata.write(fits_final, overwrite=True)
-    
 
 '''
         if dump_input_data:
